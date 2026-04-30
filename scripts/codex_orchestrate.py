@@ -1055,7 +1055,15 @@ def build_commandmate_send_command(
 
 
 def commandmate_worktree_id(branch_name: str) -> str:
-    return f"{REPO_ROOT.name}-{branch_name.replace('/', '-')}"
+    return f"{commandmate_repository_name()}-{branch_name.replace('/', '-')}"
+
+
+def commandmate_repository_name() -> str:
+    name = REPO_ROOT.name
+    match = re.match(r"(.+)-issue-\d+-", name)
+    if match:
+        return match.group(1)
+    return name
 
 
 def dispatch_commandmate(
