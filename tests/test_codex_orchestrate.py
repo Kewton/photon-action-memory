@@ -240,6 +240,28 @@ def test_commandmate_send_command_omits_agent_by_default() -> None:
     ]
 
 
+def test_commandmate_ls_command_omits_empty_branch_prefix() -> None:
+    module = load_script()
+
+    assert module.build_commandmate_ls_command(branch_prefix="feature/issue-") == [
+        "commandmatedev",
+        "ls",
+        "--branch",
+        "feature/issue-",
+        "--json",
+    ]
+    assert module.build_commandmate_ls_command(branch_prefix=None) == [
+        "commandmatedev",
+        "ls",
+        "--json",
+    ]
+    assert module.build_commandmate_ls_command(branch_prefix="") == [
+        "commandmatedev",
+        "ls",
+        "--json",
+    ]
+
+
 def test_commandmate_worktree_id_uses_commandmate_branch_format() -> None:
     module = load_script()
 
@@ -262,13 +284,13 @@ def test_commandmate_repository_name_strips_issue_worktree_suffix(
     assert module.commandmate_repository_name() == "photon-action-memory"
 
 
-def test_poll_worker_startup_resumes_stuck_worker() -> None:
+def test_poll_worker_startup_reports_started_idle_without_prompting() -> None:
     module = load_script()
     calls: list[list[str]] = []
 
     def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
         calls.append(args)
-        if args == ["commandmatedev", "ls", "--json"] and len(calls) < 3:
+        if args == ["commandmatedev", "ls", "--json"]:
             return module.subprocess.CompletedProcess(
                 args,
                 0,
@@ -285,23 +307,6 @@ def test_poll_worker_startup_resumes_stuck_worker() -> None:
                 ),
                 "",
             )
-        if args == ["commandmatedev", "ls", "--json"]:
-            return module.subprocess.CompletedProcess(
-                args,
-                0,
-                json.dumps(
-                    {
-                        "worktrees": [
-                            {
-                                "id": "repo-issue-1",
-                                "status": "running",
-                                "isProcessing": True,
-                            }
-                        ]
-                    }
-                ),
-                "",
-            )
         return module.subprocess.CompletedProcess(args, 0, "", "")
 
     result = module.poll_worker_startup(
@@ -312,8 +317,112 @@ def test_poll_worker_startup_resumes_stuck_worker() -> None:
         runner=fake_runner,
     )
 
-    assert result.status == "processing"
-    assert ["commandmatedev", "send", "repo-issue-1", "a"] in calls
+    assert result.status == "started-but-idle"
+    assert result.message == "worker session is running but not processing"
+    assert result.running is True
+    assert result.processing is False
+    assert calls == [["commandmatedev", "ls", "--json"]]
+
+
+def test_poll_worker_startup_reports_commandmate_unreachable() -> None:
+    module = load_script()
+    calls: list[list[str]] = []
+
+    def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(args)
+        return module.subprocess.CompletedProcess(
+            args,
+            1,
+            "",
+            "Error: Server is not running. Start it with: commandmate start",
+        )
+
+    result = module.poll_worker_startup(
+        1,
+        "repo-issue-1",
+        codex_agent_name="",
+        commands=("hello", "task"),
+        runner=fake_runner,
+    )
+
+    assert result.status == "blocked"
+    assert result.message.startswith("commandmate-unreachable:")
+    assert result.running is None
+    assert result.processing is None
+    assert calls == [["commandmatedev", "ls", "--json"]]
+
+
+def test_wait_for_commandmate_workers_uses_wait_without_starting_server() -> None:
+    module = load_script()
+    calls: list[list[str]] = []
+    sessions = [
+        module.WorkerSessionResult(
+            11,
+            "repo-issue-11",
+            "started-but-idle",
+            False,
+            True,
+            "running",
+            (),
+        )
+    ]
+
+    def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(args)
+        return module.subprocess.CompletedProcess(args, 0, "completed\n", "")
+
+    results = module.wait_for_commandmate_workers(
+        sessions,
+        timeout_seconds=600,
+        stall_timeout_seconds=120,
+        runner=fake_runner,
+    )
+
+    assert results[0].status == "completed"
+    assert calls == [
+        [
+            "commandmatedev",
+            "wait",
+            "repo-issue-11",
+            "--timeout",
+            "600",
+            "--stall-timeout",
+            "120",
+        ]
+    ]
+
+
+def test_wait_for_commandmate_workers_classifies_unreachable() -> None:
+    module = load_script()
+    sessions = [
+        module.WorkerSessionResult(
+            11,
+            "repo-issue-11",
+            "sent",
+            None,
+            None,
+            "sent",
+            (),
+        )
+    ]
+
+    def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
+        return module.subprocess.CompletedProcess(
+            args,
+            1,
+            "",
+            "Error: Server is not running. Start it with: commandmate start",
+        )
+
+    results = module.wait_for_commandmate_workers(
+        sessions,
+        timeout_seconds=600,
+        stall_timeout_seconds=0,
+        runner=fake_runner,
+    )
+
+    assert results[0].status == "blocked"
+    assert results[0].message.startswith("commandmate-unreachable:")
 
 
 def test_render_uat_report_includes_manual_evidence() -> None:
@@ -397,3 +506,92 @@ def test_render_pr_body_contains_required_sections() -> None:
     assert "Closes #6" in body
     assert "## Tests Run" in body
     assert "run-1" in body
+
+
+def test_create_pull_requests_pushes_branch_before_develop_pr() -> None:
+    module = load_script()
+    issue = module.Issue(
+        number=11,
+        title="[P2] Add adapter",
+        body="Update `photon_action_memory/models/photon_adapter.py`.",
+    )
+    analysis = module.analyze_issue(issue, "photon-action-memory", skip_enhance=True)
+    calls: list[list[str]] = []
+
+    def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(args)
+        if args[:3] == ["git", "rev-list", "--count"]:
+            return module.subprocess.CompletedProcess(args, 0, "1\n", "")
+        if args[:3] == ["git", "push", "-u"]:
+            return module.subprocess.CompletedProcess(args, 0, "", "")
+        if args[:3] == ["gh", "pr", "list"]:
+            return module.subprocess.CompletedProcess(args, 0, "[]\n", "")
+        if args[:3] == ["gh", "pr", "create"]:
+            return module.subprocess.CompletedProcess(
+                args,
+                0,
+                "https://github.com/Kewton/photon-action-memory/pull/42\n",
+                "",
+            )
+        return module.subprocess.CompletedProcess(args, 1, "", "unexpected")
+
+    results = module.create_pull_requests(
+        [analysis],
+        run_id="run-1",
+        dry_run=False,
+        runner=fake_runner,
+    )
+
+    assert results[0].status == "created"
+    assert results[0].pr_number == 42
+    assert ["git", "push", "-u", "origin", analysis.branch_name] in calls
+    assert calls.index(["git", "push", "-u", "origin", analysis.branch_name]) < next(
+        index for index, call in enumerate(calls) if call[:3] == ["gh", "pr", "create"]
+    )
+
+
+def test_pr_numbers_for_merge_uses_created_and_existing_prs() -> None:
+    module = load_script()
+    results = [
+        module.PullRequestResult(11, "feature/issue-11", "created", None, "https://x/pull/42", ""),
+        module.PullRequestResult(12, "feature/issue-12", "existing", 43, "https://x/pull/43", ""),
+        module.PullRequestResult(13, "feature/issue-13", "blocked", 44, "https://x/pull/44", ""),
+    ]
+
+    assert module.pr_numbers_for_merge(results) == [42, 43]
+
+
+def test_merge_pull_requests_waits_for_ci_before_merge() -> None:
+    module = load_script()
+    calls: list[list[str]] = []
+
+    def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(args)
+        if args[:3] == ["gh", "pr", "view"]:
+            return module.subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps({"isDraft": False, "mergeStateStatus": "CLEAN", "number": 42}),
+                "",
+            )
+        if args[:3] == ["gh", "pr", "checks"]:
+            return module.subprocess.CompletedProcess(args, 0, "checks passed\n", "")
+        if args[:3] == ["gh", "pr", "merge"]:
+            return module.subprocess.CompletedProcess(args, 0, "", "")
+        if args[:3] == ["git", "pull", "--ff-only"]:
+            return module.subprocess.CompletedProcess(args, 0, "", "")
+        return module.subprocess.CompletedProcess(args, 1, "", "unexpected")
+
+    results = module.merge_pull_requests(
+        [42],
+        dry_run=False,
+        merge_method="squash",
+        integration_checks=[],
+        runner=fake_runner,
+    )
+
+    assert results[0].status == "merged"
+    assert ["gh", "pr", "checks", "42", "--watch", "--interval", "10"] in calls
+    assert calls.index(["gh", "pr", "checks", "42", "--watch", "--interval", "10"]) < calls.index(
+        ["gh", "pr", "merge", "42", "--squash"]
+    )
