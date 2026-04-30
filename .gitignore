@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Build outputs
+build/
+dist/
+
+# Local state and generated data
+*.sqlite
+*.sqlite3
+workspace/data/
+workspace/temp/
+logs/
+reports/generated/
+
+# Model and dataset artifacts
+checkpoints/
+model_cache/
+*.jsonl.tmp
+
+# OS/editor
+.DS_Store
+

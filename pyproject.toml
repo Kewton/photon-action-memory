@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "photon-action-memory"
+version = "0.1.0"
+description = "Action-oriented memory sidecar for coding agents, powered by PHOTON."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Kewton" },
+]
+dependencies = [
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "pydantic>=2.8",
+  "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2",
+  "mypy>=1.11",
+  "pytest>=8.3",
+  "ruff>=0.6",
+]
+mlx = [
+  "mlx>=0.20",
+]
+
+[project.urls]
+Homepage = "https://github.com/kewton/photon-action-memory"
+
+[tool.hatch.build.targets.wheel]
+packages = ["photon_action_memory"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "B",
+  "E",
+  "F",
+  "I",
+  "UP",
+  "W",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["photon_action_memory"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
