@@ -13,6 +13,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from photon_action_memory import SCHEMA_VERSION
 
 SchemaVersion = Literal["action-memory.v1"]
+DEFAULT_SCHEMA_VERSION: SchemaVersion = "action-memory.v1"
 FALLBACK_MODEL_VERSION = "photon-action-memory-v0.1.0-fallback"
 
 ActionKind = Literal[
@@ -196,7 +197,7 @@ class HealthResponse(SidecarModel):
     """Response body for health checks."""
 
     status: str
-    schema_version: SchemaVersion = SCHEMA_VERSION
+    schema_version: SchemaVersion = DEFAULT_SCHEMA_VERSION
 
 
 EvidenceItem = Evidence
@@ -210,6 +211,7 @@ __all__ = [
     "AgentInfo",
     "Artifact",
     "Budget",
+    "DEFAULT_SCHEMA_VERSION",
     "EventRequest",
     "EventResponse",
     "Evidence",

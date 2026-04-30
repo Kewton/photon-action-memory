@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 
 from photon_action_memory import SCHEMA_VERSION, __version__
 from photon_action_memory.api.schema import (
+    DEFAULT_SCHEMA_VERSION,
     FALLBACK_MODEL_VERSION,
     EventRequest,
     EventResponse,
@@ -44,7 +45,7 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        return HealthResponse(**health_payload())
+        return HealthResponse(status="ok", schema_version=DEFAULT_SCHEMA_VERSION)
 
     @app.post("/v1/events", response_model=EventResponse)
     def append_event(event: EventRequest) -> EventResponse:
