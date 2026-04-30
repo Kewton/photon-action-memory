@@ -496,10 +496,10 @@ shadow-mode log schema:
 ### Phase 3: Sidecar first run
 
 - [ ] [#4](https://github.com/Kewton/photon-action-memory/issues/4) SQLite event store
-- [ ] [#5](https://github.com/Kewton/photon-action-memory/issues/5) FastAPI server
-- [ ] [#5](https://github.com/Kewton/photon-action-memory/issues/5) fail-open client
-- [ ] [#5](https://github.com/Kewton/photon-action-memory/issues/5) synthetic event smoke
-- [ ] [#5](https://github.com/Kewton/photon-action-memory/issues/5) no-model suggest smoke
+- [x] [#5](https://github.com/Kewton/photon-action-memory/issues/5) FastAPI server
+- [x] [#5](https://github.com/Kewton/photon-action-memory/issues/5) fail-open client
+- [x] [#5](https://github.com/Kewton/photon-action-memory/issues/5) synthetic event smoke
+- [x] [#5](https://github.com/Kewton/photon-action-memory/issues/5) no-model suggest smoke
 
 ### Phase 4: Dataset and ranking
 

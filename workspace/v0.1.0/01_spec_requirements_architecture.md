@@ -88,6 +88,9 @@ v0.1.0 では HTTP localhost を主経路とし、将来 stdio / MCP adapter を
 | `POST /v1/summarize` | session / tool loop を compact memory に変換 |
 | `POST /v1/evaluate` | shadow-mode の suggestion と実行結果を記録 |
 
+M2 MVP では `summarize` / `evaluate` は `501 Not Implemented` を返し、
+contract のみ固定する。実体は M6 の shadow eval 実装で追加する。
+
 ### 5.2 Suggest Request
 
 最小 schema:
