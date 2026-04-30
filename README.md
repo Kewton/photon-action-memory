@@ -159,7 +159,7 @@ PHOTON Action Memory focuses specifically on action-oriented memory for coding a
 - Add shadow-mode evaluation.
 - Measure reduction in repeated exploration and tool calls.
 - Add repository-local adaptation.
-- Provide an MCP adapter for broader agent compatibility.
+- Provide MCP / stdio adapters for broader agent compatibility.
 
 ## Status
 

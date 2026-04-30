@@ -81,6 +81,8 @@ metrics report に含めない。
 ### 5.1 Sidecar API
 
 v0.1.0 では HTTP localhost を主経路とし、将来 stdio / MCP adapter を追加できる形にする。
+adapter 方針は `workspace/v0.1.0/mcp_stdio_adapter_design.md` に固定し、HTTP /
+stdio / MCP は同じ sidecar API schema を再利用する transport として扱う。
 
 必須 endpoint:
 
