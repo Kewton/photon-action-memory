@@ -49,3 +49,17 @@ def test_build_send_command_defaults_to_no_agent() -> None:
 
     assert "--agent" not in cmd
     assert cmd[:4] == ["commandmatedev", "send", "repo-issue-1", "hello"]
+
+
+def test_build_ls_command_omits_empty_branch_prefix() -> None:
+    module = load_script()
+
+    assert module.build_ls_command(branch_prefix="feature/issue-") == [
+        "commandmatedev",
+        "ls",
+        "--branch",
+        "feature/issue-",
+        "--json",
+    ]
+    assert module.build_ls_command(branch_prefix=None) == ["commandmatedev", "ls", "--json"]
+    assert module.build_ls_command(branch_prefix="") == ["commandmatedev", "ls", "--json"]

@@ -15,6 +15,10 @@ Use this skill when the user asks to run `/orchestrate <issue...>` for this repo
 - Prefer repository-local artifacts under `workspace/management/runs/`.
 - Do not delete, reset, or overwrite existing worktrees without explicit user approval.
 - Do not merge PRs with failing CI unless the user explicitly approves.
+- Do not start/stop CommandMate or kill port processes unless the user explicitly asks.
+- Treat `commandmatedev` read failures such as `Server is not running` as "unreachable"
+  until verified outside the sandbox; Codex sandboxed localhost access can fail even when
+  the user's terminal and CommandMate server are healthy.
 - Include manual UAT steps when GUI or real-device confirmation is needed.
 
 ## First Action
@@ -32,4 +36,3 @@ Review the generated:
 - `workspace/management/runs/<run_id>/dependency-plan.md`
 
 Proceed to worktree creation and CommandMate dispatch only after the plan is coherent and any blocking questions have been answered.
-

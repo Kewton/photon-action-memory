@@ -72,13 +72,22 @@ def build_send_command(
     return cmd
 
 
+def build_ls_command(*, branch_prefix: str | None = None, json_output: bool = True) -> list[str]:
+    cmd = ["commandmatedev", "ls"]
+    if branch_prefix:
+        cmd.extend(["--branch", branch_prefix])
+    if json_output:
+        cmd.append("--json")
+    return cmd
+
+
 def command_to_display(cmd: list[str]) -> str:
     return " ".join(cmd)
 
 
 def list_sessions() -> list[WorktreeSession]:
     completed = subprocess.run(
-        ["commandmatedev", "ls", "--json"],
+        build_ls_command(),
         check=True,
         capture_output=True,
         text=True,

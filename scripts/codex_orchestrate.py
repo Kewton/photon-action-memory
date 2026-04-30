@@ -89,6 +89,14 @@ class WorkerSessionResult:
 
 
 @dataclass(frozen=True)
+class WorkerWaitResult:
+    issue_number: int
+    worktree_id: str
+    status: str
+    message: str
+
+
+@dataclass(frozen=True)
 class PullRequestResult:
     issue_number: int
     branch_name: str
@@ -175,6 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll-commandmate", action="store_true")
     parser.add_argument("--codex-agent-name", default="")
     parser.add_argument("--commandmate-duration", default="3h")
+    parser.add_argument("--wait-commandmate-timeout", type=int, default=10800)
+    parser.add_argument("--wait-commandmate-stall-timeout", type=int, default=0)
     parser.add_argument("--repo", default="")
     parser.add_argument(
         "--integration-check",
@@ -1054,6 +1064,17 @@ def build_commandmate_send_command(
     return cmd
 
 
+def build_commandmate_ls_command(
+    *, branch_prefix: str | None = None, json_output: bool = True
+) -> list[str]:
+    cmd = ["commandmatedev", "ls"]
+    if branch_prefix:
+        cmd.extend(["--branch", branch_prefix])
+    if json_output:
+        cmd.append("--json")
+    return cmd
+
+
 def commandmate_worktree_id(branch_name: str) -> str:
     return f"{commandmate_repository_name()}-{branch_name.replace('/', '-')}"
 
@@ -1137,22 +1158,17 @@ def poll_worker_startup(
             commands,
         )
     if state["running"] is True and state["processing"] is False:
-        resume = ["commandmatedev", "send", worktree_id, "a"]
-        runner(resume, cwd=REPO_ROOT)
-        state = get_commandmate_state(worktree_id, codex_agent_name=codex_agent_name, runner=runner)
-        commands = (*commands, " ".join(resume))
-        if state["processing"] is True:
-            return WorkerSessionResult(
-                issue_number,
-                worktree_id,
-                "processing",
-                True,
-                state["running"],
-                "worker resumed after short prompt",
-                commands,
-            )
+        return WorkerSessionResult(
+            issue_number,
+            worktree_id,
+            "started-but-idle",
+            False,
+            True,
+            "worker session is running but not processing",
+            commands,
+        )
     if state["found"] is False:
-        message = "worktree session not found in CommandMate"
+        message = str(state.get("message") or "worktree session not found in CommandMate")
     else:
         message = "worker did not enter processing state"
     return WorkerSessionResult(
@@ -1168,14 +1184,34 @@ def poll_worker_startup(
 
 def get_commandmate_state(
     worktree_id: str, *, codex_agent_name: str, runner: Runner = run_command
-) -> dict[str, bool | None]:
-    completed = runner(["commandmatedev", "ls", "--json"], cwd=REPO_ROOT)
-    if completed.returncode != 0 or not completed.stdout.strip():
-        return {"found": False, "running": None, "processing": None}
+) -> dict[str, object]:
+    completed = runner(build_commandmate_ls_command(), cwd=REPO_ROOT)
+    if completed.returncode != 0:
+        return {
+            "found": False,
+            "running": None,
+            "processing": None,
+            "status": "unreachable",
+            "message": classify_commandmate_failure(completed),
+        }
+    if not completed.stdout.strip():
+        return {
+            "found": False,
+            "running": None,
+            "processing": None,
+            "status": "empty-response",
+            "message": "commandmatedev ls returned no output",
+        }
     try:
         raw = json.loads(completed.stdout)
     except json.JSONDecodeError:
-        return {"found": False, "running": None, "processing": None}
+        return {
+            "found": False,
+            "running": None,
+            "processing": None,
+            "status": "invalid-json",
+            "message": "commandmatedev ls returned invalid JSON",
+        }
     items = raw if isinstance(raw, list) else raw.get("worktrees", [])
     for item in items:
         if not isinstance(item, dict):
@@ -1207,8 +1243,87 @@ def get_commandmate_state(
             "found": True,
             "running": running,
             "processing": bool(processing) if processing is not None else None,
+            "status": "found",
+            "message": "worktree session found",
         }
-    return {"found": False, "running": None, "processing": None}
+    return {
+        "found": False,
+        "running": None,
+        "processing": None,
+        "status": "not-found",
+        "message": "worktree session not found in CommandMate",
+    }
+
+
+def classify_commandmate_failure(completed: subprocess.CompletedProcess[str]) -> str:
+    output = "\n".join(part for part in (completed.stderr, completed.stdout) if part).strip()
+    lowered = output.lower()
+    if (
+        "server is not running" in lowered
+        or "fetch failed" in lowered
+        or "econnrefused" in lowered
+        or "couldn't connect to server" in lowered
+    ):
+        return (
+            "commandmate-unreachable: local CommandMate HTTP endpoint could not be reached. "
+            "This can be a sandbox localhost access issue; do not infer server shutdown or start "
+            "CommandMate automatically."
+        )
+    return output or "commandmate command failed"
+
+
+def wait_for_commandmate_workers(
+    results: list[WorkerSessionResult],
+    *,
+    timeout_seconds: int,
+    stall_timeout_seconds: int,
+    runner: Runner = run_command,
+) -> list[WorkerWaitResult]:
+    wait_results: list[WorkerWaitResult] = []
+    for result in results:
+        if result.status not in {"sent", "processing", "started-but-idle"}:
+            continue
+        cmd = ["commandmatedev", "wait", result.worktree_id, "--timeout", str(timeout_seconds)]
+        if stall_timeout_seconds > 0:
+            cmd.extend(["--stall-timeout", str(stall_timeout_seconds)])
+        completed = runner(cmd, cwd=REPO_ROOT)
+        if completed.returncode == 0:
+            wait_results.append(
+                WorkerWaitResult(
+                    result.issue_number,
+                    result.worktree_id,
+                    "completed",
+                    completed.stdout.strip() or "worker completed",
+                )
+            )
+        else:
+            wait_results.append(
+                WorkerWaitResult(
+                    result.issue_number,
+                    result.worktree_id,
+                    "blocked",
+                    classify_commandmate_failure(completed),
+                )
+            )
+    return wait_results
+
+
+def render_worker_wait_report(results: list[WorkerWaitResult]) -> str:
+    lines = ["# CommandMate Wait Report", ""]
+    if not results:
+        return "# CommandMate Wait Report\n\nNo worker wait requested.\n"
+    for result in results:
+        lines.extend(
+            [
+                f"## Issue #{result.issue_number}",
+                "",
+                f"- Worktree ID: `{result.worktree_id}`",
+                f"- Status: `{result.status}`",
+                f"- Message: {result.message}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def render_pr_body(analysis: IssueAnalysis, run_id: str) -> str:
@@ -1294,6 +1409,20 @@ def create_pull_requests(
                 )
             )
             continue
+        if not dry_run:
+            push = push_branch_to_origin(analysis.branch_name, runner=runner)
+            if push.returncode != 0:
+                results.append(
+                    PullRequestResult(
+                        issue_number=analysis.issue.number,
+                        branch_name=analysis.branch_name,
+                        status="blocked",
+                        pr_number=None,
+                        url=None,
+                        message=push.stderr.strip() or "branch push failed",
+                    )
+                )
+                continue
         existing = None if dry_run else find_existing_pr(analysis.branch_name, runner=runner)
         if existing is not None:
             results.append(
@@ -1335,17 +1464,45 @@ def create_pull_requests(
             )
             continue
         completed = runner(cmd, cwd=REPO_ROOT, check=True)
+        url = completed.stdout.strip() or None
         results.append(
             PullRequestResult(
                 issue_number=analysis.issue.number,
                 branch_name=analysis.branch_name,
                 status="created",
-                pr_number=None,
-                url=completed.stdout.strip() or None,
-                message="PR created",
+                pr_number=parse_pr_number(url or ""),
+                url=url,
+                message="branch pushed and PR created",
             )
         )
     return results
+
+
+def push_branch_to_origin(
+    branch_name: str, *, runner: Runner = run_command
+) -> subprocess.CompletedProcess[str]:
+    return runner(["git", "push", "-u", "origin", branch_name], cwd=REPO_ROOT)
+
+
+def parse_pr_number(value: str) -> int | None:
+    match = re.search(r"/pull/(\d+)(?:\D*$|$)", value)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def pr_numbers_for_merge(results: list[PullRequestResult]) -> list[int]:
+    numbers: list[int] = []
+    for result in results:
+        if result.status not in {"created", "existing"}:
+            continue
+        if result.pr_number is not None:
+            numbers.append(result.pr_number)
+            continue
+        parsed = parse_pr_number(result.url or "")
+        if parsed is not None:
+            numbers.append(parsed)
+    return numbers
 
 
 def branch_has_commits(branch_name: str, *, runner: Runner = run_command) -> bool:
@@ -1395,9 +1552,9 @@ def merge_pull_requests(
         if mergeable.status != "mergeable":
             results.append(mergeable)
             break
-        checks = runner(["gh", "pr", "checks", str(pr_number)], cwd=REPO_ROOT)
-        if checks.returncode != 0:
-            results.append(MergeResult(pr_number, "blocked", "CI checks failed or unavailable"))
+        checks = wait_for_pr_checks(pr_number, runner=runner)
+        if checks.status != "passed":
+            results.append(MergeResult(pr_number, "blocked", checks.message))
             break
         cmd = ["gh", "pr", "merge", str(pr_number)]
         if merge_method is not None:
@@ -1410,7 +1567,7 @@ def merge_pull_requests(
             break
         runner(["git", "pull", "--ff-only", "origin", "develop"], cwd=REPO_ROOT, check=True)
         verification = run_integration_checks(integration_checks, runner=runner)
-        if verification != "passed":
+        if verification.startswith("failed:"):
             results.append(
                 MergeResult(
                     pr_number,
@@ -1422,6 +1579,20 @@ def merge_pull_requests(
             break
         results.append(MergeResult(pr_number, "merged", "merged and develop updated", verification))
     return results
+
+
+def wait_for_pr_checks(pr_number: int, *, runner: Runner = run_command) -> MergeResult:
+    checks = runner(
+        ["gh", "pr", "checks", str(pr_number), "--watch", "--interval", "10"],
+        cwd=REPO_ROOT,
+    )
+    if checks.returncode != 0:
+        return MergeResult(
+            pr_number,
+            "blocked",
+            checks.stderr.strip() or "CI checks failed or unavailable",
+        )
+    return MergeResult(pr_number, "passed", "CI checks passed")
 
 
 def check_pr_mergeability(pr_number: int, *, runner: Runner = run_command) -> MergeResult:
@@ -1778,6 +1949,10 @@ def main() -> int:
 
     worktree_results: list[WorktreeResult] = []
     dispatch_results: list[WorkerSessionResult] = []
+    wait_results: list[WorkerWaitResult] = []
+    publish_requested = (
+        args.create_prs or args.merge_prs or (not dry_run and phase_at_least(args.phase, "pr"))
+    )
     if args.create_worktrees or (not dry_run and phase_at_least(args.phase, "dev")):
         worktree_results = create_or_reuse_worktrees(analyses, dry_run=dry_run)
         dispatch_results = dispatch_commandmate(
@@ -1806,7 +1981,7 @@ def main() -> int:
                         },
                     )
                 )
-            elif result.status in {"sent", "processing", "planned"}:
+            elif result.status in {"sent", "processing", "planned", "started-but-idle"}:
                 photon_results.append(
                     emit_photon_event(
                         args.photon_url,
@@ -1820,16 +1995,40 @@ def main() -> int:
                     )
                 )
 
-    if args.create_prs:
+    can_publish = True
+    if publish_requested and not dry_run and args.dispatch_commandmate and dispatch_results:
+        wait_results = wait_for_commandmate_workers(
+            dispatch_results,
+            timeout_seconds=args.wait_commandmate_timeout,
+            stall_timeout_seconds=args.wait_commandmate_stall_timeout,
+        )
+        (run_dir / "commandmate-wait-report.md").write_text(
+            render_worker_wait_report(wait_results),
+            encoding="utf-8",
+        )
+        can_publish = all(result.status == "completed" for result in wait_results)
+
+    pr_results: list[PullRequestResult] = []
+    if publish_requested and can_publish:
         pr_results = create_pull_requests(analyses, run_id=run_dir.name, dry_run=dry_run)
         (run_dir / "pr-report.md").write_text(render_pr_report(pr_results), encoding="utf-8")
+    elif publish_requested:
+        (run_dir / "pr-report.md").write_text(
+            "# PR Report\n\nSkipped because one or more CommandMate workers did not complete.\n",
+            encoding="utf-8",
+        )
 
-    if args.merge_prs:
+    merge_requested = args.merge_prs or (not dry_run and phase_at_least(args.phase, "merge"))
+    if merge_requested and can_publish:
         pr_numbers = [int(part.strip()) for part in args.pr_numbers.split(",") if part.strip()]
         if not pr_numbers:
-            pr_numbers = [analysis.issue.number for analysis in analyses] if dry_run else []
+            pr_numbers = (
+                [analysis.issue.number for analysis in analyses]
+                if dry_run
+                else pr_numbers_for_merge(pr_results)
+            )
         if not pr_numbers:
-            raise ValueError("--merge-prs requires --pr-numbers outside dry-run mode")
+            raise ValueError("merge phase requires created/existing PR numbers")
         merge_results = merge_pull_requests(
             pr_numbers,
             dry_run=dry_run,
@@ -1854,6 +2053,11 @@ def main() -> int:
                     },
                 )
             )
+    elif merge_requested:
+        (run_dir / "merge-report.md").write_text(
+            "# Merge Report\n\nSkipped because one or more CommandMate workers did not complete.\n",
+            encoding="utf-8",
+        )
 
     if args.write_uat or phase_at_least(args.phase, "uat"):
         (run_dir / "uat-report.md").write_text(render_uat_report(analyses), encoding="utf-8")
