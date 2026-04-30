@@ -20,7 +20,7 @@ from photon_action_memory.api.schema import (
     SuggestResponse,
 )
 from photon_action_memory.memory.store import SQLiteEventStore
-from photon_action_memory.models.photon_adapter import is_model_available
+from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
 from photon_action_memory.ranking.guards import fallback_warnings
 
@@ -75,12 +75,23 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
 def build_fallback_suggestions(request: SuggestRequest) -> SuggestResponse:
     max_suggestions = max(0, request.budget.max_suggestions)
     evidence = _evidence_from_recent_events(request)
-    suggestions = build_ranked_suggestions(request, evidence=evidence, limit=max_suggestions)
-    warnings = fallback_warnings(request)
-    if not is_model_available():
+    fallback_suggestions = build_ranked_suggestions(
+        request,
+        evidence=evidence,
+        limit=max_suggestions,
+    )
+    adapter_result = score_suggestions_with_optional_adapter(
+        request,
+        evidence=evidence,
+        suggestions=fallback_suggestions,
+    )
+    if adapter_result is None:
+        suggestions = fallback_suggestions
         model_version = FALLBACK_MODEL_VERSION
+        warnings = fallback_warnings(request)
     else:
-        model_version = "photon-action-memory-v0.1.0"
+        suggestions, model_version = adapter_result
+        warnings = []
 
     return SuggestResponse(
         request_id=request.request_id,
