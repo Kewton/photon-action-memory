@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 REDACTED_SECRET = "[REDACTED_SECRET]"
 REDACTED_EMAIL = "[EMAIL]"
@@ -25,6 +26,8 @@ BEARER_VALUE_RE = re.compile(r"(?i)\b(?P<prefix>bearer\s+)(?P<value>[A-Za-z0-9_\
 LONG_SECRET_RE = re.compile(r"\b(?:sk-[A-Za-z0-9_\-]{16,}|[A-Za-z0-9_\-]{32,})\b")
 URL_TOKEN_RE = re.compile(r"(?i)([?&](?:token|key|secret|signature|sig)=)[^&\s]+")
 ABS_PATH_RE = re.compile(r"(?P<path>/(?:Users|home|tmp)/[^\s'\"`),;]+)")
+
+SanitizedPayload = dict[str, Any]
 
 
 @dataclass
@@ -93,6 +96,20 @@ def sanitize_text_with_report(
         out = out[:max_chars] + "\n...[truncated]"
 
     return SanitizedText(text=out, report=report)
+
+
+def sanitize_event_payload(payload: Mapping[str, Any]) -> SanitizedPayload:
+    """Return a sanitized copy of an event payload safe for local persistence."""
+    sanitized = _sanitize_payload_value(payload)
+    if not isinstance(sanitized, dict):
+        msg = "event payload must sanitize to a JSON object"
+        raise TypeError(msg)
+
+    if not isinstance(sanitized.get("redaction_status"), str):
+        sanitized["redaction_status"] = (
+            "redacted" if sanitized != _plain_json_value(payload) else "clean"
+        )
+    return sanitized
 
 
 def filter_safe_path_candidates(
@@ -180,6 +197,32 @@ def looks_like_uuid(value: str) -> bool:
             value,
         )
     )
+
+
+def _sanitize_payload_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return sanitize_text(value)
+    if isinstance(value, Mapping):
+        return {str(key): _sanitize_payload_value(child) for key, child in value.items()}
+    if _is_sequence(value):
+        return [_sanitize_payload_value(child) for child in value]
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    return sanitize_text(str(value))
+
+
+def _plain_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _plain_json_value(child) for key, child in value.items()}
+    if _is_sequence(value):
+        return [_plain_json_value(child) for child in value]
+    if value is None or isinstance(value, str | bool | int | float):
+        return value
+    return str(value)
+
+
+def _is_sequence(value: Any) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray)
 
 
 def _replace_secret_assignment(match: re.Match[str], report: RedactionReport) -> str:
