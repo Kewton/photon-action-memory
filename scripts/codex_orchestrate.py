@@ -399,7 +399,10 @@ def enrich_file_candidates_with_rg(text: str, existing: list[str]) -> list[str]:
     candidates = list(existing)
     seen = set(candidates)
     for phrase in extract_search_phrases(text):
-        completed = run_command(["rg", "-l", "--fixed-strings", phrase], cwd=REPO_ROOT)
+        try:
+            completed = run_command(["rg", "-l", "--fixed-strings", phrase], cwd=REPO_ROOT)
+        except FileNotFoundError:
+            return candidates
         if completed.returncode not in (0, 1):
             continue
         for line in completed.stdout.splitlines()[:5]:
