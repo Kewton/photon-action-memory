@@ -504,8 +504,8 @@ shadow-mode log schema:
 ### Phase 4: Dataset and ranking
 
 - [ ] [#7](https://github.com/Kewton/photon-action-memory/issues/7) MyCodeBranchDesk exporter 移植
-- [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) dataset JSONL spec
-- [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) deterministic split
+- [x] [#8](https://github.com/Kewton/photon-action-memory/issues/8) dataset JSONL spec
+- [x] [#8](https://github.com/Kewton/photon-action-memory/issues/8) deterministic split / stats
 - [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) candidate extractor
 - [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) fallback ranker
 - [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) repeated action / missing evidence warning
