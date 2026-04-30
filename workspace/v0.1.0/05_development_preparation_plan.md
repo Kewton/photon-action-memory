@@ -437,6 +437,17 @@ score_evidence(state, evidence) -> list[ScoredEvidence]
 - Anvil shadow-mode request / response fixture
 - shadow evaluation event schema
 
+contract fixtures:
+
+- `tests/fixtures/anvil_shadow_mode/suggest_request.json`
+- `tests/fixtures/anvil_shadow_mode/suggest_response.json`
+- `tests/fixtures/anvil_shadow_mode/event_request.json`
+- `tests/fixtures/anvil_shadow_mode/evaluate_request.json`
+
+integration spec:
+
+- `workspace/v0.1.0/anvil_shadow_mode_contract.md`
+
 metrics:
 
 - next action top-k accuracy

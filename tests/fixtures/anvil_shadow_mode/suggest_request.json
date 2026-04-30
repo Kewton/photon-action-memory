@@ -1,0 +1,72 @@
+{
+  "schema_version": "action-memory.v1",
+  "request_id": "anvil-shadow-req-0001",
+  "agent": {
+    "name": "anvil",
+    "version": "0.1.x",
+    "shadow_mode": true
+  },
+  "repo": {
+    "root": "[REPO_ROOT]",
+    "name": "Anvil",
+    "branch": "feature/action-memory-shadow",
+    "commit": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b"
+  },
+  "task": {
+    "user_request": "Wire sidecar suggestions into the actor loop in shadow mode.",
+    "mode": "act",
+    "summary": "Call PHOTON sidecar before choosing the next Anvil action."
+  },
+  "working_memory": {
+    "active_task": "Add shadow-mode sidecar call around the Anvil actor loop",
+    "constraints": [
+      "Do not let sidecar failures block the agent loop",
+      "Log whether the actual next action matched a suggestion"
+    ],
+    "touched_files": [
+      "src/agent/loop_run/turn.rs",
+      "src/session/store.rs"
+    ],
+    "unresolved_errors": [],
+    "active_precautions": [
+      "Keep sidecar calls fail-open",
+      "Do not store raw secrets"
+    ],
+    "plan": [
+      "Read actor loop",
+      "Add sidecar client boundary",
+      "Record shadow evaluation"
+    ],
+    "completed_steps": [
+      "Read actor loop"
+    ],
+    "pending_steps": [
+      "Record shadow evaluation"
+    ],
+    "evidence_ids": [
+      "evt-actor-loop-read"
+    ],
+    "anvil_working_memory": {
+      "turn_id": "turn-20260430-001",
+      "actor_loop_phase": "before_next_action",
+      "active_files": [
+        "src/agent/loop_run/turn.rs"
+      ]
+    }
+  },
+  "recent_events": [
+    {
+      "type": "file_read",
+      "tool": "read",
+      "status": "success",
+      "summary": "Read src/agent/loop_run/turn.rs and found the next-action decision point.",
+      "event_id": "evt-actor-loop-read",
+      "path": "src/agent/loop_run/turn.rs"
+    }
+  ],
+  "budget": {
+    "max_suggestions": 3,
+    "max_evidence_chars": 1200
+  },
+  "shadow_mode": true
+}
