@@ -13,6 +13,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from photon_action_memory import SCHEMA_VERSION
 
 SchemaVersion = Literal["action-memory.v1"]
+DEFAULT_SCHEMA_VERSION: SchemaVersion = "action-memory.v1"
+FALLBACK_MODEL_VERSION = "photon-action-memory-v0.1.0-fallback"
 
 ActionKind = Literal[
     "read",
@@ -25,7 +27,13 @@ ActionKind = Literal[
     "answer",
     "replan",
 ]
-WarningKind = Literal["drift", "repeat_failure", "missing_evidence", "sidecar_unavailable"]
+WarningKind = Literal[
+    "drift",
+    "repeat_failure",
+    "missing_evidence",
+    "sidecar_unavailable",
+    "model_unavailable",
+]
 
 
 class SidecarModel(BaseModel):
@@ -177,24 +185,51 @@ class EventRequest(SidecarModel):
     events: list[SidecarEvent]
 
 
+class EventResponse(SidecarModel):
+    """Response body for `POST /v1/events`."""
+
+    status: str
+    event_id: str
+    stored: bool
+
+
+class HealthResponse(SidecarModel):
+    """Response body for health checks."""
+
+    status: str
+    schema_version: SchemaVersion = DEFAULT_SCHEMA_VERSION
+
+
+EvidenceItem = Evidence
+SuggestBudget = Budget
+WarningMessage = Warning
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "ActionKind",
     "AgentInfo",
     "Artifact",
     "Budget",
+    "DEFAULT_SCHEMA_VERSION",
     "EventRequest",
+    "EventResponse",
     "Evidence",
+    "EvidenceItem",
+    "FALLBACK_MODEL_VERSION",
+    "HealthResponse",
     "RecentEvent",
     "RepoInfo",
     "SchemaVersion",
     "SidecarEvent",
     "SidecarModel",
+    "SuggestBudget",
     "SuggestRequest",
     "SuggestResponse",
     "Suggestion",
     "TaskState",
     "Warning",
     "WarningKind",
+    "WarningMessage",
     "WorkingMemory",
 ]

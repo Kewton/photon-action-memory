@@ -34,7 +34,8 @@ class EventStore:
 
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
-        self._connection = sqlite3.connect(self.db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._initialize_schema()
 
@@ -138,8 +139,28 @@ class EventStore:
         rows = self._connection.execute(query, params).fetchall()
         return [_stored_event_from_row(row) for row in rows]
 
+    def count(self) -> int:
+        row = self._connection.execute("SELECT COUNT(*) AS count FROM events").fetchone()
+        return int(row["count"])
+
     def _initialize_schema(self) -> None:
         with self._connection:
+            columns = {
+                str(row["name"])
+                for row in self._connection.execute("PRAGMA table_info(events)").fetchall()
+            }
+            required_columns = {
+                "schema_version",
+                "event_id",
+                "session_id",
+                "turn_id",
+                "repo_id",
+                "timestamp",
+                "event_type",
+                "payload_json",
+            }
+            if columns and not required_columns.issubset(columns):
+                self._connection.execute("DROP TABLE events")
             self._connection.executescript(
                 """
                 PRAGMA journal_mode=WAL;
@@ -160,6 +181,13 @@ class EventStore:
                     ON events (repo_id, timestamp);
                 """
             )
+
+
+class SQLiteEventStore(EventStore):
+    """Compatibility name used by the sidecar MVP."""
+
+    def append(self, payload: Mapping[str, Any]) -> StoredEvent:
+        return self.append_event(payload)
 
 
 def _stored_event_from_row(row: sqlite3.Row) -> StoredEvent:
@@ -213,4 +241,4 @@ def _to_canonical_json(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
-__all__ = ["EventStore", "StoredEvent"]
+__all__ = ["EventStore", "SQLiteEventStore", "StoredEvent"]

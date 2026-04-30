@@ -13,12 +13,13 @@ def test_package_metadata() -> None:
 
 
 def test_placeholder_health_payload() -> None:
-    assert health_payload() == {"status": "ok"}
+    assert health_payload() == {"status": "ok", "schema_version": "action-memory.v1"}
 
 
 def test_placeholder_fail_open_response() -> None:
     payload = fallback_response("timeout")
     assert payload["suggestions"] == []
+    assert payload["evidence"] == []
     assert payload["warnings"] == [{"kind": "sidecar_unavailable", "message": "timeout"}]
 
 
