@@ -7,7 +7,7 @@ import json
 import shlex
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import floor
 from pathlib import Path
 from typing import Any, Self, cast
@@ -87,6 +87,25 @@ class DatasetRecord:
         }
 
 
+@dataclass
+class ExportStats:
+    """Counters collected while exporting trajectory examples."""
+
+    counters: Counter[str] = field(default_factory=Counter)
+    actions: Counter[str] = field(default_factory=Counter)
+    tools: Counter[str] = field(default_factory=Counter)
+    redactions: Counter[str] = field(default_factory=Counter)
+    examples_by_cli: Counter[str] = field(default_factory=Counter)
+    context_chars: list[int] = field(default_factory=list)
+    target_file_counts: list[int] = field(default_factory=list)
+
+    def inc(self, key: str, amount: int = 1) -> None:
+        self.counters[key] += amount
+
+    def record_redactions(self, counts: Mapping[str, int]) -> None:
+        self.redactions.update(counts)
+
+
 def make_dataset_record(
     *,
     source: Mapping[str, Any],
@@ -112,6 +131,11 @@ def make_dataset_record(
     return DatasetRecord.from_mapping({"example_id": resolved_id, **record_body})
 
 
+def stable_hash(text: str, length: int = 16) -> str:
+    """Return a stable short hash suitable for source metadata."""
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:length]
+
+
 def stable_example_id(value: Mapping[str, Any]) -> str:
     """Return a deterministic example ID for a JSON-like record body."""
     canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -119,13 +143,34 @@ def stable_example_id(value: Mapping[str, Any]) -> str:
     return f"ex-{digest[:16]}"
 
 
-def write_jsonl(records: Iterable[DatasetRecord], path: str | Path) -> None:
-    """Write dataset records as UTF-8 JSONL."""
-    rows = [
-        json.dumps(record.as_dict(), ensure_ascii=False, sort_keys=False, separators=(",", ":"))
-        for record in records
-    ]
-    Path(path).write_text(("\n".join(rows) + "\n") if rows else "", encoding="utf-8")
+def write_jsonl(
+    records_or_path: Iterable[DatasetRecord | Mapping[str, Any]] | str | Path,
+    path_or_records: str | Path | Iterable[DatasetRecord | Mapping[str, Any]],
+) -> int:
+    """Write records as UTF-8 JSONL and return the row count.
+
+    The preferred call style is ``write_jsonl(records, path)``. The legacy
+    exporter call style ``write_jsonl(path, mappings)`` is retained so exporter
+    code can write richer mapping examples without converting them to
+    ``DatasetRecord`` first.
+    """
+    if isinstance(records_or_path, str | Path):
+        path = Path(records_or_path)
+        records = path_or_records
+    else:
+        path = Path(cast(str | Path, path_or_records))
+        records = records_or_path
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with path.open("w", encoding="utf-8") as handle:
+        for record in cast(Iterable[DatasetRecord | Mapping[str, Any]], records):
+            handle.write(
+                json.dumps(_record_to_json_object(record), ensure_ascii=False, sort_keys=True)
+            )
+            handle.write("\n")
+            count += 1
+    return count
 
 
 def read_jsonl(path: str | Path) -> list[DatasetRecord]:
@@ -195,6 +240,36 @@ def write_stats(records: Sequence[DatasetRecord], path: str | Path) -> None:
     )
 
 
+def write_redaction_report(path: str | Path, redactions: Mapping[str, int]) -> None:
+    """Write redaction counters as JSON."""
+    report_path = Path(path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(dict(redactions), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def summarize_export_stats(
+    stats: ExportStats, *, output: str | Path | None = None
+) -> dict[str, Any]:
+    """Build a JSON-serializable export summary."""
+
+    def avg(values: list[int]) -> float:
+        return round(sum(values) / len(values), 1) if values else 0.0
+
+    return {
+        "output": str(output) if output is not None else None,
+        "counters": dict(stats.counters),
+        "examples_by_action": dict(stats.actions),
+        "examples_by_tool": dict(stats.tools),
+        "examples_by_cli": dict(stats.examples_by_cli),
+        "redactions": dict(stats.redactions),
+        "avg_context_chars": avg(stats.context_chars),
+        "avg_target_files": avg(stats.target_file_counts),
+    }
+
+
 def dataset_stats(records: Sequence[DatasetRecord]) -> JsonObject:
     """Return aggregate stats for actions, tools, CLI commands, files, and redactions."""
     action_counts: Counter[str] = Counter()
@@ -243,6 +318,12 @@ def dataset_stats(records: Sequence[DatasetRecord]) -> JsonObject:
         "target_file_total": sum(target_file_counts.values()),
         "redaction": dict(sorted(redaction_counts.items())),
     }
+
+
+def _record_to_json_object(record: DatasetRecord | Mapping[str, Any]) -> JsonObject:
+    if isinstance(record, DatasetRecord):
+        return record.as_dict()
+    return dict(record)
 
 
 def _required_object(value: Mapping[str, Any], key: str) -> JsonObject:
@@ -343,3 +424,20 @@ def _integer_items(value: Mapping[str, object]) -> dict[str, int]:
         for key, child in value.items()
         if isinstance(child, int) and not isinstance(child, bool)
     }
+
+
+__all__ = [
+    "DatasetRecord",
+    "ExportStats",
+    "dataset_stats",
+    "make_dataset_record",
+    "read_jsonl",
+    "split_records",
+    "stable_example_id",
+    "stable_hash",
+    "summarize_export_stats",
+    "write_jsonl",
+    "write_redaction_report",
+    "write_split_dataset",
+    "write_stats",
+]

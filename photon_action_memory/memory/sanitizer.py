@@ -25,7 +25,7 @@ SECRET_ASSIGNMENT_RE = re.compile(
 BEARER_VALUE_RE = re.compile(r"(?i)\b(?P<prefix>bearer\s+)(?P<value>[A-Za-z0-9_\-./+=:]{12,})\b")
 LONG_SECRET_RE = re.compile(r"\b(?:sk-[A-Za-z0-9_\-]{16,}|[A-Za-z0-9_\-]{32,})\b")
 URL_TOKEN_RE = re.compile(r"(?i)([?&](?:token|key|secret|signature|sig)=)[^&\s]+")
-ABS_PATH_RE = re.compile(r"(?P<path>/(?:Users|home|tmp)/[^\s'\"`),;]+)")
+ABS_PATH_RE = re.compile(r"(?P<path>/(?:Users|home|var|tmp|private|opt)/[^\s'\"`),;]+)")
 
 SanitizedPayload = dict[str, Any]
 

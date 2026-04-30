@@ -50,7 +50,10 @@ def test_sanitize_text_normalizes_sensitive_absolute_paths() -> None:
     text = (
         "repo /Users/alice/project/src/app.py "
         "home /home/bob/.config/tool.toml "
-        "tmp /tmp/session/output.log"
+        "tmp /tmp/session/output.log "
+        "private /private/tmp/work/cache.json "
+        "var /var/folders/session/build.log "
+        "opt /opt/local/bin/tool.sh"
     )
 
     sanitized = sanitize_text(text, workspace_roots=["/Users/alice/project"])
@@ -61,6 +64,9 @@ def test_sanitize_text_normalizes_sensitive_absolute_paths() -> None:
     assert "/Users/alice" not in sanitized
     assert "/home/bob" not in sanitized
     assert "/tmp/session" not in sanitized
+    assert "/private/tmp/work" not in sanitized
+    assert "/var/folders/session" not in sanitized
+    assert "/opt/local/bin" not in sanitized
 
 
 def test_sanitize_text_removes_ansi_and_control_characters() -> None:
