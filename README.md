@@ -167,6 +167,29 @@ This repository is in the initial design and implementation phase.
 
 The v0.1.0 development bootstrap is organized under `workspace/v0.1.0/`.
 
+## License
+
+PHOTON Action Memory is released under the MIT License. See `LICENSE`.
+
+## Release
+
+Releases are tagged as `vX.Y.Z`. Pushing a release tag triggers the GitHub
+Actions release workflow, builds the Python source distribution and wheel, and
+attaches the generated artifacts to a GitHub Release.
+
+Use the repository release command when preparing a new release:
+
+```text
+/release patch
+/release minor
+/release major
+/release 1.2.3
+```
+
+The release flow updates `pyproject.toml`, `photon_action_memory/__init__.py`,
+and `CHANGELOG.md`, opens a release PR to `main`, and creates the tag only after
+the PR is merged.
+
 ## Development
 
 Requirements:
