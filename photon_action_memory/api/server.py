@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
@@ -49,7 +48,13 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
 
     @app.post("/v1/events", response_model=EventResponse)
     def append_event(event: EventRequest) -> EventResponse:
-        stored = event_store.append(event.model_dump(mode="json"))
+        stored_events = []
+        for item in event.events:
+            payload = item.model_dump(mode="json")
+            payload["turn_id"] = payload.get("turn_id") or event.request_id
+            payload["repo_id"] = payload.get("repo_id") or "unknown"
+            stored_events.append(event_store.append(payload))
+        stored = stored_events[-1]
         return EventResponse(status="stored", event_id=stored.event_id, stored=True)
 
     @app.post("/v1/suggest", response_model=SuggestResponse)
@@ -121,13 +126,12 @@ def build_fallback_suggestions(request: SuggestRequest) -> SuggestResponse:
 
 def _candidate_targets(request: SuggestRequest) -> list[str]:
     items: list[str] = []
-    touched_files = request.working_memory.get("touched_files")
-    if isinstance(touched_files, list):
-        items.extend(str(item) for item in touched_files if item)
+    items.extend(str(item) for item in request.working_memory.touched_files if item)
 
     for event in request.recent_events:
+        event_payload = event.model_dump()
         for key in ("target", "file", "path"):
-            value = event.get(key)
+            value = event_payload.get(key)
             if isinstance(value, str) and value:
                 items.append(value)
 
@@ -148,7 +152,7 @@ def _evidence_from_recent_events(request: SuggestRequest) -> list[EvidenceItem]:
         evidence.append(
             EvidenceItem(
                 id=f"evt_{index:03d}",
-                kind=str(event.get("type") or event.get("event_type") or "event"),
+                kind=event.type,
                 summary=clipped,
                 source="request",
             )
@@ -160,16 +164,13 @@ def _evidence_from_recent_events(request: SuggestRequest) -> list[EvidenceItem]:
     return evidence
 
 
-def _event_summary(event: dict[str, Any]) -> str:
-    value = event.get("summary") or event.get("message")
-    if isinstance(value, str):
-        return value
-    return ""
+def _event_summary(event: object) -> str:
+    return str(getattr(event, "summary", "") or "")
 
 
 def _fallback_query(request: SuggestRequest) -> str:
-    summary = request.task.get("summary") or request.task.get("user_request")
-    if isinstance(summary, str) and summary:
+    summary = request.task.summary or request.task.user_request
+    if summary:
         return summary[:120]
     return request.request_id
 
