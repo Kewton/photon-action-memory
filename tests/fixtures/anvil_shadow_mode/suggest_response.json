@@ -1,0 +1,54 @@
+{
+  "schema_version": "action-memory.v1",
+  "request_id": "anvil-shadow-req-0001",
+  "model_version": "photon-action-memory-v0.1.0-fallback",
+  "suggestions": [
+    {
+      "id": "sug-read-turn-loop",
+      "kind": "read",
+      "target": "src/agent/loop_run/turn.rs",
+      "confidence": 0.72,
+      "reason": "The actor loop contains the next-action decision point for shadow-mode suggestion calls.",
+      "evidence_ids": [
+        "evt_001"
+      ],
+      "risk": "low"
+    },
+    {
+      "id": "sug-read-session-store",
+      "kind": "read",
+      "target": "src/session/store.rs",
+      "confidence": 0.58,
+      "reason": "Working memory serialization is needed to populate the sidecar request.",
+      "evidence_ids": [
+        "evt_001"
+      ],
+      "risk": "low"
+    },
+    {
+      "id": "sug-search-shadow-eval",
+      "kind": "search",
+      "query": "shadow evaluation next action matched ignored reason outcome",
+      "confidence": 0.41,
+      "reason": "Existing evaluation terminology should be reused for adoption and ignored tracking.",
+      "evidence_ids": [],
+      "risk": "low"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "evt_001",
+      "kind": "file_read",
+      "summary": "Read src/agent/loop_run/turn.rs and found the next-action decision point.",
+      "source": "request"
+    }
+  ],
+  "warnings": [
+    {
+      "kind": "model_unavailable",
+      "message": "PHOTON model scoring is unavailable; deterministic fallback suggestions were used."
+    }
+  ],
+  "sidecar_status": "ok",
+  "latency_ms": 184.2
+}
