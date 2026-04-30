@@ -164,3 +164,37 @@ PHOTON Action Memory focuses specifically on action-oriented memory for coding a
 ## Status
 
 This repository is in the initial design and implementation phase.
+
+The v0.1.0 development bootstrap is organized under `workspace/v0.1.0/`.
+
+## Development
+
+Requirements:
+
+- Python 3.12
+- `pip`
+
+Install local development dependencies:
+
+```bash
+python -m pip install -U pip
+python -m pip install -e ".[dev]"
+```
+
+Run the standard checks:
+
+```bash
+ruff format --check .
+ruff check .
+mypy photon_action_memory tests
+pytest -q
+python -m build
+```
+
+PHOTON / MLX support is optional during v0.1.0 bootstrap:
+
+```bash
+python -m pip install -e ".[dev,mlx]"
+```
+
+The package must continue to import and run its default tests without MLX installed.

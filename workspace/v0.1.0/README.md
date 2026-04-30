@@ -16,6 +16,7 @@
 | `02_branch_strategy_ci.md` | ブランチ戦略、CI パイプライン定義 |
 | `03_photon_mlx_extraction_plan.md` | `photon-mlx` からの切り出し計画 |
 | `04_work_plan.md` | v0.1.0 作業計画 |
+| `05_development_preparation_plan.md` | `photon-mlx-develop` 実ソース参照後の開発準備作業計画 |
 
 ## v0.1.0 の基本方針
 
