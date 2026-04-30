@@ -171,6 +171,52 @@ contract のみ固定する。実体は M6 の shadow eval 実装で追加する
 }
 ```
 
+### 5.4 Shadow Evaluation Contract
+
+Anvil は shadow-mode では suggestion を受け取るが、最終判断は agent loop 側で行う。
+`POST /v1/evaluate` は、その判断結果を後から評価できるように以下を記録する。
+
+```json
+{
+  "schema_version": "action-memory.v1",
+  "request_id": "anvil-shadow-eval-0001",
+  "session_id": "anvil-session-20260430",
+  "records": [
+    {
+      "request_id": "anvil-shadow-req-0001",
+      "suggestion_ids": [
+        "sug-read-turn-loop",
+        "sug-read-session-store"
+      ],
+      "actual_next_action": {
+        "kind": "read",
+        "target": "src/agent/loop_run/turn.rs",
+        "summary": "Read the actor loop before editing"
+      },
+      "matched": true,
+      "ignored_reason": null,
+      "outcome": "success",
+      "latency_ms": 184.2,
+      "sidecar_status": "ok"
+    }
+  ]
+}
+```
+
+contract fixture:
+
+- `tests/fixtures/anvil_shadow_mode/suggest_request.json`
+- `tests/fixtures/anvil_shadow_mode/suggest_response.json`
+- `tests/fixtures/anvil_shadow_mode/event_request.json`
+- `tests/fixtures/anvil_shadow_mode/evaluate_request.json`
+
+integration spec:
+
+- `workspace/v0.1.0/anvil_shadow_mode_contract.md`
+
+これにより request id、suggestion ids、actual next action、matched、
+ignored reason、outcome、latency、sidecar status を固定 schema で追跡する。
+
 ## 6. 非機能要件
 
 | 項目 | 要件 |

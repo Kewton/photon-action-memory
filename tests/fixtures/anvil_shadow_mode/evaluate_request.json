@@ -1,0 +1,41 @@
+{
+  "schema_version": "action-memory.v1",
+  "request_id": "anvil-shadow-eval-0001",
+  "session_id": "anvil-session-20260430",
+  "records": [
+    {
+      "request_id": "anvil-shadow-req-0001",
+      "suggestion_ids": [
+        "sug-read-turn-loop",
+        "sug-read-session-store",
+        "sug-search-shadow-eval"
+      ],
+      "actual_next_action": {
+        "kind": "read",
+        "target": "src/agent/loop_run/turn.rs",
+        "summary": "Read the Anvil actor loop before adding the sidecar call."
+      },
+      "matched": true,
+      "ignored_reason": null,
+      "outcome": "success",
+      "latency_ms": 184.2,
+      "sidecar_status": "ok"
+    },
+    {
+      "request_id": "anvil-shadow-req-0002",
+      "suggestion_ids": [
+        "sug-search-shadow-eval"
+      ],
+      "actual_next_action": {
+        "kind": "edit",
+        "target": "src/agent/loop_run/turn.rs",
+        "summary": "Edited the local sidecar boundary after existing plan state already had enough evidence."
+      },
+      "matched": false,
+      "ignored_reason": "existing_plan_had_higher_priority",
+      "outcome": "partial",
+      "latency_ms": 92.7,
+      "sidecar_status": "ok"
+    }
+  ]
+}

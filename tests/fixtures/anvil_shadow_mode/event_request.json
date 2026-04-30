@@ -1,0 +1,40 @@
+{
+  "schema_version": "action-memory.v1",
+  "request_id": "anvil-shadow-events-0001",
+  "events": [
+    {
+      "schema_version": "action-memory.v1",
+      "event_id": "evt-anvil-shadow-0001",
+      "session_id": "anvil-session-20260430",
+      "turn_id": "turn-20260430-001",
+      "repo_id": "anvil",
+      "timestamp": "2026-04-30T12:00:00Z",
+      "event_type": "shadow_evaluation",
+      "status": "success",
+      "summary": "Sidecar suggestion matched the actual next action in shadow mode.",
+      "artifacts": [
+        {
+          "kind": "shadow_evaluation",
+          "value": "anvil-shadow-req-0001",
+          "metadata": {
+            "suggestion_ids": [
+              "sug-read-turn-loop",
+              "sug-read-session-store",
+              "sug-search-shadow-eval"
+            ],
+            "actual_next_action": {
+              "kind": "read",
+              "target": "src/agent/loop_run/turn.rs"
+            },
+            "matched": true,
+            "ignored_reason": null,
+            "outcome": "success",
+            "latency_ms": 184.2,
+            "sidecar_status": "ok"
+          }
+        }
+      ],
+      "redaction_status": "sanitized"
+    }
+  ]
+}
