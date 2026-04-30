@@ -167,7 +167,7 @@ P1:
 - [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) Add deterministic ranking fallback
 - [ ] [#7](https://github.com/Kewton/photon-action-memory/issues/7) Migrate MyCodeBranchDesk exporter
 - [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) Add dataset split and stats
-- [ ] [#9](https://github.com/Kewton/photon-action-memory/issues/9) Add evaluation metrics
+- [x] [#9](https://github.com/Kewton/photon-action-memory/issues/9) Add evaluation metrics
 - [ ] [#10](https://github.com/Kewton/photon-action-memory/issues/10) Add Anvil shadow-mode contract fixtures
 
 P2:
@@ -446,6 +446,11 @@ metrics:
 - fail-open incident count
 - p50 / p95 suggest latency
 
+Issue #9 の最小実装では、normalized shadow fixture から上記 metrics を
+`eval-metrics.v1` aggregate summary として生成する。runner が commit 可能な
+output として書くのは counts / rates / latency percentile のみで、raw log、
+prompt、tool output、per-turn suggestion record は直接出力しない。
+
 shadow-mode log schema:
 
 - request id
@@ -516,7 +521,7 @@ shadow-mode log schema:
 - [ ] [#11](https://github.com/Kewton/photon-action-memory/issues/11) PHOTON adapter interface
 - [ ] [#12](https://github.com/Kewton/photon-action-memory/issues/12) checkpoint I/O
 - [ ] [#13](https://github.com/Kewton/photon-action-memory/issues/13) macOS smoke workflow
-- [ ] [#9](https://github.com/Kewton/photon-action-memory/issues/9) offline eval runner
+- [x] [#9](https://github.com/Kewton/photon-action-memory/issues/9) offline eval runner
 - [ ] [#10](https://github.com/Kewton/photon-action-memory/issues/10) Anvil shadow contract
 
 ## 14. 初回 PR の推奨スコープ
