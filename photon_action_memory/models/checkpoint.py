@@ -88,10 +88,7 @@ def _clean_state(raw_state: dict[str, Any], *, strict: bool) -> tuple[dict[str, 
         joined = ", ".join(unknown_keys)
         raise CheckpointInvalid(f"checkpoint state contains unknown keys: {joined}")
 
-    warnings = [
-        f"dropped unknown checkpoint state key: {key}"
-        for key in unknown_keys
-    ]
+    warnings = [f"dropped unknown checkpoint state key: {key}" for key in unknown_keys]
     return (
         {key: value for key, value in raw_state.items() if key in ALLOWED_STATE_KEYS},
         warnings,

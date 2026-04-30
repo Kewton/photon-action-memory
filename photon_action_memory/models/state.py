@@ -40,9 +40,7 @@ class PhotonScoringState:
             recent_event_summaries=tuple(
                 str(getattr(event, "summary", "") or "") for event in recent_events
             ),
-            evidence_summaries=tuple(
-                str(getattr(item, "summary", "") or "") for item in evidence
-            ),
+            evidence_summaries=tuple(str(getattr(item, "summary", "") or "") for item in evidence),
         )
 
 
