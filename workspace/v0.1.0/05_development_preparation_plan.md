@@ -241,12 +241,14 @@ photon_action_memory/
 - `mypy photon_action_memory tests`
 - `pytest -q`
 - `python -m build`
+- macOS MLX smoke は `develop` push / nightly / manual で標準 Ubuntu CI から分離する。
 
 完了条件:
 
 - 空の package を import できる。
 - CI workflow が Ubuntu で通る構成になっている。
 - MLX が未インストールでも import / tests が通る。
+- MLX 導入済み macOS runner で tiny scoring smoke が通る。
 - PR template に schema / sanitizer / fail-open 確認項目がある。
 
 ## 7. M1 Schema First 詳細計画

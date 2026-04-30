@@ -68,7 +68,7 @@ Anvil は以下の構成を採用している。
 
 | Job | Trigger | 目的 |
 | --- | --- | --- |
-| `mlx-smoke` | `develop` push / nightly / manual | macOS runner で MLX import + tiny inference smoke |
+| `mlx-smoke` | `develop` push / nightly / manual | macOS runner で MLX import + tiny scoring smoke |
 | `integration-anvil-schema` | PR label / manual | Anvil request fixture との schema compatibility |
 | `eval-shadow` | nightly / manual | fixed fixture に対する suggestion metric |
 | `release` | tag `v*` | wheel / sdist publish artifact 作成 |
