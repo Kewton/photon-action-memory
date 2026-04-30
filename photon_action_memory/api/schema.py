@@ -34,6 +34,8 @@ WarningKind = Literal[
     "sidecar_unavailable",
     "model_unavailable",
 ]
+SidecarStatus = Literal["ok", "timeout", "error", "unavailable", "not_called"]
+ShadowOutcome = Literal["success", "failure", "partial", "unknown"]
 
 
 class SidecarModel(BaseModel):
@@ -115,6 +117,7 @@ class SuggestRequest(SidecarModel):
 class Suggestion(SidecarModel):
     """Action guidance returned by the sidecar."""
 
+    id: str | None = None
     kind: ActionKind
     target: str | None = None
     command: str | None = None
@@ -193,6 +196,45 @@ class EventResponse(SidecarModel):
     stored: bool
 
 
+class ActualNextAction(SidecarModel):
+    """Action Anvil actually took after receiving shadow-mode suggestions."""
+
+    kind: ActionKind | str
+    target: str | None = None
+    command: str | None = None
+    query: str | None = None
+    summary: str
+
+
+class EvaluationRecord(SidecarModel):
+    """One shadow-mode evaluation record for `POST /v1/evaluate`."""
+
+    request_id: str
+    suggestion_ids: list[str] = Field(default_factory=list)
+    actual_next_action: ActualNextAction
+    matched: bool
+    ignored_reason: str | None = None
+    outcome: ShadowOutcome | str = "unknown"
+    latency_ms: float = Field(ge=0)
+    sidecar_status: SidecarStatus | str
+
+
+class EvaluationRequest(SidecarModel):
+    """Request body for recording shadow-mode suggestion outcomes."""
+
+    schema_version: SchemaVersion
+    request_id: str
+    session_id: str | None = None
+    records: list[EvaluationRecord]
+
+
+class EvaluationResponse(SidecarModel):
+    """Response body for accepted shadow-mode evaluation records."""
+
+    status: str
+    accepted: int = Field(ge=0)
+
+
 class HealthResponse(SidecarModel):
     """Response body for health checks."""
 
@@ -208,12 +250,16 @@ WarningMessage = Warning
 __all__ = [
     "SCHEMA_VERSION",
     "ActionKind",
+    "ActualNextAction",
     "AgentInfo",
     "Artifact",
     "Budget",
     "DEFAULT_SCHEMA_VERSION",
     "EventRequest",
     "EventResponse",
+    "EvaluationRecord",
+    "EvaluationRequest",
+    "EvaluationResponse",
     "Evidence",
     "EvidenceItem",
     "FALLBACK_MODEL_VERSION",
@@ -223,6 +269,8 @@ __all__ = [
     "SchemaVersion",
     "SidecarEvent",
     "SidecarModel",
+    "SidecarStatus",
+    "ShadowOutcome",
     "SuggestBudget",
     "SuggestRequest",
     "SuggestResponse",

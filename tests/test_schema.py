@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from photon_action_memory import SCHEMA_VERSION
 from photon_action_memory.api.schema import (
+    EvaluationRequest,
+    EventRequest,
     SidecarEvent,
     SuggestRequest,
     SuggestResponse,
 )
+
+FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "anvil_shadow_mode"
 
 
 def test_minimal_suggest_request_round_trip() -> None:
@@ -168,6 +174,48 @@ def test_anvil_working_memory_fixture_round_trip() -> None:
     ]
     assert round_tripped.model_dump()["working_memory"]["anvil_working_memory"]["mode"] == "act"
     assert round_tripped.recent_events[0].type == "tool_result"
+
+
+def test_anvil_shadow_mode_contract_fixtures_validate() -> None:
+    request = SuggestRequest.model_validate_json(
+        (FIXTURE_ROOT / "suggest_request.json").read_text()
+    )
+    response = SuggestResponse.model_validate_json(
+        (FIXTURE_ROOT / "suggest_response.json").read_text()
+    )
+    event = EventRequest.model_validate_json((FIXTURE_ROOT / "event_request.json").read_text())
+    evaluation = EvaluationRequest.model_validate_json(
+        (FIXTURE_ROOT / "evaluate_request.json").read_text()
+    )
+
+    response_suggestion_ids = [item.id for item in response.suggestions if item.id]
+    adopted_record, ignored_record = evaluation.records
+    event_metadata = event.events[0].artifacts[0].metadata
+
+    assert request.request_id == "anvil-shadow-req-0001"
+    assert request.model_dump()["shadow_mode"] is True
+    assert response.request_id == request.request_id
+    assert response_suggestion_ids == [
+        "sug-read-turn-loop",
+        "sug-read-session-store",
+        "sug-search-shadow-eval",
+    ]
+    assert adopted_record.request_id == request.request_id
+    assert adopted_record.suggestion_ids == response_suggestion_ids
+    assert adopted_record.actual_next_action.kind == "read"
+    assert adopted_record.actual_next_action.target == "src/agent/loop_run/turn.rs"
+    assert adopted_record.matched is True
+    assert adopted_record.ignored_reason is None
+    assert adopted_record.outcome == "success"
+    assert adopted_record.latency_ms == 184.2
+    assert adopted_record.sidecar_status == "ok"
+    assert event.events[0].event_type == "shadow_evaluation"
+    assert event_metadata["suggestion_ids"] == response_suggestion_ids
+    assert event_metadata["matched"] is True
+    assert event_metadata["sidecar_status"] == "ok"
+    assert ignored_record.matched is False
+    assert ignored_record.ignored_reason == "existing_plan_had_higher_priority"
+    assert ignored_record.outcome == "partial"
 
 
 def test_event_payload_round_trip_accepts_type_alias() -> None:

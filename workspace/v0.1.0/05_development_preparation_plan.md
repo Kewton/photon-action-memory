@@ -41,7 +41,7 @@ GitHub issue 登録状況:
 | [#4](https://github.com/Kewton/photon-action-memory/issues/4) | P0 | M2 | Implement local SQLite event store | Open |
 | [#5](https://github.com/Kewton/photon-action-memory/issues/5) | P0 | M2 | Implement sidecar health/events/suggest | Open |
 | [#6](https://github.com/Kewton/photon-action-memory/issues/6) | P1 | M4 | Add deterministic ranking fallback | Open |
-| [#7](https://github.com/Kewton/photon-action-memory/issues/7) | P1 | M3 | Migrate MyCodeBranchDesk exporter | Open |
+| [#7](https://github.com/Kewton/photon-action-memory/issues/7) | P1 | M3 | Migrate MyCodeBranchDesk exporter | Done |
 | [#8](https://github.com/Kewton/photon-action-memory/issues/8) | P1 | M3 | Add dataset split and stats | Open |
 | [#9](https://github.com/Kewton/photon-action-memory/issues/9) | P1 | M6 | Add evaluation metrics | Open |
 | [#10](https://github.com/Kewton/photon-action-memory/issues/10) | P1 | M6 | Add Anvil shadow-mode contract fixtures | Open |
@@ -165,9 +165,9 @@ P0:
 P1:
 
 - [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) Add deterministic ranking fallback
-- [ ] [#7](https://github.com/Kewton/photon-action-memory/issues/7) Migrate MyCodeBranchDesk exporter
+- [x] [#7](https://github.com/Kewton/photon-action-memory/issues/7) Migrate MyCodeBranchDesk exporter
 - [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) Add dataset split and stats
-- [ ] [#9](https://github.com/Kewton/photon-action-memory/issues/9) Add evaluation metrics
+- [x] [#9](https://github.com/Kewton/photon-action-memory/issues/9) Add evaluation metrics
 - [ ] [#10](https://github.com/Kewton/photon-action-memory/issues/10) Add Anvil shadow-mode contract fixtures
 
 P2:
@@ -437,6 +437,17 @@ score_evidence(state, evidence) -> list[ScoredEvidence]
 - Anvil shadow-mode request / response fixture
 - shadow evaluation event schema
 
+contract fixtures:
+
+- `tests/fixtures/anvil_shadow_mode/suggest_request.json`
+- `tests/fixtures/anvil_shadow_mode/suggest_response.json`
+- `tests/fixtures/anvil_shadow_mode/event_request.json`
+- `tests/fixtures/anvil_shadow_mode/evaluate_request.json`
+
+integration spec:
+
+- `workspace/v0.1.0/anvil_shadow_mode_contract.md`
+
 metrics:
 
 - next action top-k accuracy
@@ -445,6 +456,11 @@ metrics:
 - repeated exploration warning precision
 - fail-open incident count
 - p50 / p95 suggest latency
+
+Issue #9 の最小実装では、normalized shadow fixture から上記 metrics を
+`eval-metrics.v1` aggregate summary として生成する。runner が commit 可能な
+output として書くのは counts / rates / latency percentile のみで、raw log、
+prompt、tool output、per-turn suggestion record は直接出力しない。
 
 shadow-mode log schema:
 
@@ -503,12 +519,12 @@ shadow-mode log schema:
 
 ### Phase 4: Dataset and ranking
 
-- [ ] [#7](https://github.com/Kewton/photon-action-memory/issues/7) MyCodeBranchDesk exporter 移植
-- [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) dataset JSONL spec
-- [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) deterministic split
-- [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) candidate extractor
-- [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) fallback ranker
-- [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) repeated action / missing evidence warning
+- [x] [#7](https://github.com/Kewton/photon-action-memory/issues/7) MyCodeBranchDesk exporter 移植
+- [x] [#8](https://github.com/Kewton/photon-action-memory/issues/8) dataset JSONL spec
+- [x] [#8](https://github.com/Kewton/photon-action-memory/issues/8) deterministic split / stats
+- [x] [#6](https://github.com/Kewton/photon-action-memory/issues/6) candidate extractor
+- [x] [#6](https://github.com/Kewton/photon-action-memory/issues/6) fallback ranker
+- [x] [#6](https://github.com/Kewton/photon-action-memory/issues/6) repeated action / missing evidence warning
 
 ### Phase 5: Model and eval
 
@@ -516,7 +532,7 @@ shadow-mode log schema:
 - [ ] [#11](https://github.com/Kewton/photon-action-memory/issues/11) PHOTON adapter interface
 - [ ] [#12](https://github.com/Kewton/photon-action-memory/issues/12) checkpoint I/O
 - [ ] [#13](https://github.com/Kewton/photon-action-memory/issues/13) macOS smoke workflow
-- [ ] [#9](https://github.com/Kewton/photon-action-memory/issues/9) offline eval runner
+- [x] [#9](https://github.com/Kewton/photon-action-memory/issues/9) offline eval runner
 - [ ] [#10](https://github.com/Kewton/photon-action-memory/issues/10) Anvil shadow contract
 
 ## 14. 初回 PR の推奨スコープ
