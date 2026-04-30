@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "codex_orchestrate.py"
 
 
@@ -245,6 +247,19 @@ def test_commandmate_worktree_id_uses_commandmate_branch_format() -> None:
         module.commandmate_worktree_id("feature/issue-2-p0-m1-define-v1-sidecar-schema")
         == "photon-action-memory-feature-issue-2-p0-m1-define-v1-sidecar-schema"
     )
+
+
+def test_commandmate_repository_name_strips_issue_worktree_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_script()
+    monkeypatch.setattr(
+        module,
+        "REPO_ROOT",
+        Path("/tmp/photon-action-memory-issue-2-p0-m1-define-v1-sidecar-schema"),
+    )
+
+    assert module.commandmate_repository_name() == "photon-action-memory"
 
 
 def test_poll_worker_startup_resumes_stuck_worker() -> None:
