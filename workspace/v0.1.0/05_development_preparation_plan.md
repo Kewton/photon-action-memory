@@ -41,7 +41,7 @@ GitHub issue 登録状況:
 | [#4](https://github.com/Kewton/photon-action-memory/issues/4) | P0 | M2 | Implement local SQLite event store | Open |
 | [#5](https://github.com/Kewton/photon-action-memory/issues/5) | P0 | M2 | Implement sidecar health/events/suggest | Open |
 | [#6](https://github.com/Kewton/photon-action-memory/issues/6) | P1 | M4 | Add deterministic ranking fallback | Open |
-| [#7](https://github.com/Kewton/photon-action-memory/issues/7) | P1 | M3 | Migrate MyCodeBranchDesk exporter | Open |
+| [#7](https://github.com/Kewton/photon-action-memory/issues/7) | P1 | M3 | Migrate MyCodeBranchDesk exporter | Done |
 | [#8](https://github.com/Kewton/photon-action-memory/issues/8) | P1 | M3 | Add dataset split and stats | Open |
 | [#9](https://github.com/Kewton/photon-action-memory/issues/9) | P1 | M6 | Add evaluation metrics | Open |
 | [#10](https://github.com/Kewton/photon-action-memory/issues/10) | P1 | M6 | Add Anvil shadow-mode contract fixtures | Open |
@@ -165,7 +165,7 @@ P0:
 P1:
 
 - [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) Add deterministic ranking fallback
-- [ ] [#7](https://github.com/Kewton/photon-action-memory/issues/7) Migrate MyCodeBranchDesk exporter
+- [x] [#7](https://github.com/Kewton/photon-action-memory/issues/7) Migrate MyCodeBranchDesk exporter
 - [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) Add dataset split and stats
 - [ ] [#9](https://github.com/Kewton/photon-action-memory/issues/9) Add evaluation metrics
 - [ ] [#10](https://github.com/Kewton/photon-action-memory/issues/10) Add Anvil shadow-mode contract fixtures
@@ -503,7 +503,7 @@ shadow-mode log schema:
 
 ### Phase 4: Dataset and ranking
 
-- [ ] [#7](https://github.com/Kewton/photon-action-memory/issues/7) MyCodeBranchDesk exporter 移植
+- [x] [#7](https://github.com/Kewton/photon-action-memory/issues/7) MyCodeBranchDesk exporter 移植
 - [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) dataset JSONL spec
 - [ ] [#8](https://github.com/Kewton/photon-action-memory/issues/8) deterministic split
 - [ ] [#6](https://github.com/Kewton/photon-action-memory/issues/6) candidate extractor
