@@ -241,12 +241,14 @@ photon_action_memory/
 - `mypy photon_action_memory tests`
 - `pytest -q`
 - `python -m build`
+- macOS MLX smoke は `develop` push / nightly / manual で標準 Ubuntu CI から分離する。
 
 完了条件:
 
 - 空の package を import できる。
 - CI workflow が Ubuntu で通る構成になっている。
 - MLX が未インストールでも import / tests が通る。
+- MLX 導入済み macOS runner で tiny scoring smoke が通る。
 - PR template に schema / sanitizer / fail-open 確認項目がある。
 
 ## 7. M1 Schema First 詳細計画
@@ -528,8 +530,8 @@ shadow-mode log schema:
 
 ### Phase 5: Model and eval
 
-- [ ] [#11](https://github.com/Kewton/photon-action-memory/issues/11) MLX optional extra
-- [ ] [#11](https://github.com/Kewton/photon-action-memory/issues/11) PHOTON adapter interface
+- [x] [#11](https://github.com/Kewton/photon-action-memory/issues/11) MLX optional extra
+- [x] [#11](https://github.com/Kewton/photon-action-memory/issues/11) PHOTON adapter interface
 - [ ] [#12](https://github.com/Kewton/photon-action-memory/issues/12) checkpoint I/O
 - [ ] [#13](https://github.com/Kewton/photon-action-memory/issues/13) macOS smoke workflow
 - [x] [#9](https://github.com/Kewton/photon-action-memory/issues/9) offline eval runner
