@@ -66,7 +66,7 @@ def test_event_store_persists_only_sanitized_payload(tmp_path: Path) -> None:
     assert raw_secret not in payload_json
     assert raw_path not in payload_json
     assert "[REDACTED_SECRET]" in payload_json
-    assert "[USER_PATH]/work/private/repo/main.py" in payload_json
+    assert "[ABS_PATH]/main.py" in payload_json
     assert payload["redaction_status"] == "redacted"
 
 
