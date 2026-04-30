@@ -16,14 +16,13 @@ from photon_action_memory.api.schema import (
     EventResponse,
     EvidenceItem,
     HealthResponse,
-    Suggestion,
     SuggestRequest,
     SuggestResponse,
-    WarningMessage,
 )
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.models.photon_adapter import is_model_available
-from photon_action_memory.ranking.candidates import extract_candidates
+from photon_action_memory.ranking.fallback import build_ranked_suggestions
+from photon_action_memory.ranking.guards import fallback_warnings
 
 
 def health_payload() -> dict[str, str]:
@@ -76,40 +75,8 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
 def build_fallback_suggestions(request: SuggestRequest) -> SuggestResponse:
     max_suggestions = max(0, request.budget.max_suggestions)
     evidence = _evidence_from_recent_events(request)
-    candidates = _candidate_targets(request)
-    suggestions: list[Suggestion] = []
-
-    for target in candidates[:max_suggestions]:
-        suggestions.append(
-            Suggestion(
-                kind="read",
-                target=target,
-                confidence=0.35,
-                reason="Deterministic fallback prioritized a touched or recently mentioned file.",
-                evidence_ids=[item.id for item in evidence[:1]],
-            )
-        )
-
-    if len(suggestions) < max_suggestions:
-        query = _fallback_query(request)
-        suggestions.append(
-            Suggestion(
-                kind="search",
-                query=query,
-                confidence=0.2,
-                reason="No model checkpoint is available; search is a low-risk fallback action.",
-                evidence_ids=[item.id for item in evidence[:1]],
-            )
-        )
-
-    warnings = [
-        WarningMessage(
-            kind="model_unavailable",
-            message=(
-                "PHOTON model scoring is unavailable; deterministic fallback suggestions were used."
-            ),
-        )
-    ]
+    suggestions = build_ranked_suggestions(request, evidence=evidence, limit=max_suggestions)
+    warnings = fallback_warnings(request)
     if not is_model_available():
         model_version = FALLBACK_MODEL_VERSION
     else:
@@ -123,20 +90,6 @@ def build_fallback_suggestions(request: SuggestRequest) -> SuggestResponse:
         evidence=evidence,
         warnings=warnings,
     )
-
-
-def _candidate_targets(request: SuggestRequest) -> list[str]:
-    items: list[str] = []
-    items.extend(str(item) for item in request.working_memory.touched_files if item)
-
-    for event in request.recent_events:
-        event_payload = event.model_dump()
-        for key in ("target", "file", "path"):
-            value = event_payload.get(key)
-            if isinstance(value, str) and value:
-                items.append(value)
-
-    return extract_candidates(items)
 
 
 def _evidence_from_recent_events(request: SuggestRequest) -> list[EvidenceItem]:
@@ -167,13 +120,6 @@ def _evidence_from_recent_events(request: SuggestRequest) -> list[EvidenceItem]:
 
 def _event_summary(event: object) -> str:
     return str(getattr(event, "summary", "") or "")
-
-
-def _fallback_query(request: SuggestRequest) -> str:
-    summary = request.task.summary or request.task.user_request
-    if summary:
-        return summary[:120]
-    return request.request_id
 
 
 app = create_app()
