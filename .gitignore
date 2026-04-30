@@ -19,6 +19,7 @@ workspace/data/
 workspace/temp/
 logs/
 reports/generated/
+workspace/management/runs/
 
 # Model and dataset artifacts
 checkpoints/
@@ -27,4 +28,3 @@ model_cache/
 
 # OS/editor
 .DS_Store
-
