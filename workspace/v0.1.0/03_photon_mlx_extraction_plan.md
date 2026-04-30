@@ -114,6 +114,7 @@ photon_action_memory/
 
 - Anvil から呼べる API contract を先に固定する
 - PHOTON model なしでも有用な suggestion を返す
+- HTTP / stdio / MCP adapter が同じ sidecar schema を再利用できるようにする
 
 成果物:
 
@@ -122,6 +123,7 @@ photon_action_memory/
 - file / command / query candidate extractor
 - deterministic ranking fallback
 - fail-open behavior
+- MCP / stdio adapter design note
 
 ### Stage 2: Event store and exporter migration
 
@@ -197,6 +199,11 @@ v0.1.x では schema version を必ず含める。
 - enum 値追加は minor version 扱い
 - required field 削除 / rename は破壊的変更
 - 破壊的変更は `v0.2.0` 以降に回す
+
+HTTP / stdio / MCP は transport adapter として扱い、別 schema を作らない。
+adapter 固有の envelope は canonical DTO の外側に置き、payload body は
+`photon_action_memory.api.schema` の request / response / event / evaluation
+contract を再利用する。詳細は `mcp_stdio_adapter_design.md` にまとめる。
 
 ## 6. データ移行ポリシー
 

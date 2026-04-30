@@ -482,6 +482,38 @@ shadow-mode log schema:
 - adoption / ignored / outcome を追跡できる。
 - eval runner は raw log を直接吐かない。
 
+## 12.5 MCP / stdio Adapter Design Note
+
+Issue #14 では、HTTP localhost sidecar 以外の統合経路として
+`workspace/v0.1.0/mcp_stdio_adapter_design.md` を追加する。
+
+adapter 方針:
+
+- `photon_action_memory.api.schema` の DTO を HTTP / stdio / MCP 共通の
+  canonical schema として再利用する。
+- HTTP は v0.1.0 の実装対象 transport とし、JSON encoding、status code、
+  timeout、health check を担当する。
+- stdio は将来の local child-process integration 用 transport とし、stdin /
+  stdout の envelope だけを担当する。
+- MCP は将来の tool / resource integration layer とし、tool arguments と
+  canonical DTO の変換、capability discovery、tool result formatting を担当する。
+- sanitizer、event store、ranking、PHOTON scorer、shadow evaluation は core
+  service の責務であり、adapter に重複実装しない。
+- secret、raw conversation log、prompt、tool stdout/stderr、absolute user path
+  を adapter 経由で渡さない。adapter debug log や error にも raw payload を
+  出さない。
+
+v0.1.0 で実装しない範囲:
+
+- stdio adapter process
+- MCP server
+- MCP resource exposure
+- adapter-specific schema / storage
+- remote MCP / remote sidecar deployment
+- raw log streaming
+- secret passthrough mode
+- adapter 経由の online training
+
 ## 13. 実装順チェックリスト
 
 ### Phase 0: Repository bootstrap
@@ -536,6 +568,7 @@ shadow-mode log schema:
 - [ ] [#13](https://github.com/Kewton/photon-action-memory/issues/13) macOS smoke workflow
 - [x] [#9](https://github.com/Kewton/photon-action-memory/issues/9) offline eval runner
 - [ ] [#10](https://github.com/Kewton/photon-action-memory/issues/10) Anvil shadow contract
+- [x] [#14](https://github.com/Kewton/photon-action-memory/issues/14) MCP / stdio adapter design note
 
 ## 14. 初回 PR の推奨スコープ
 
