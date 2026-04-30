@@ -95,9 +95,7 @@ def build_metrics_report(records: Sequence[RawRecord], *, top_k: int = 3) -> Met
     parsed = [_coerce_record(record) for record in records]
 
     next_action_records = [record for record in parsed if record.actual_next_action is not None]
-    next_action_hits = sum(
-        _has_action_hit(record, top_k=top_k) for record in next_action_records
-    )
+    next_action_hits = sum(_has_action_hit(record, top_k=top_k) for record in next_action_records)
 
     target_file_records = [record for record in parsed if _actual_target_file(record)]
     target_file_hits = sum(
