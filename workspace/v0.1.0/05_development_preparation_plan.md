@@ -528,8 +528,8 @@ shadow-mode log schema:
 
 ### Phase 5: Model and eval
 
-- [ ] [#11](https://github.com/Kewton/photon-action-memory/issues/11) MLX optional extra
-- [ ] [#11](https://github.com/Kewton/photon-action-memory/issues/11) PHOTON adapter interface
+- [x] [#11](https://github.com/Kewton/photon-action-memory/issues/11) MLX optional extra
+- [x] [#11](https://github.com/Kewton/photon-action-memory/issues/11) PHOTON adapter interface
 - [ ] [#12](https://github.com/Kewton/photon-action-memory/issues/12) checkpoint I/O
 - [ ] [#13](https://github.com/Kewton/photon-action-memory/issues/13) macOS smoke workflow
 - [x] [#9](https://github.com/Kewton/photon-action-memory/issues/9) offline eval runner
