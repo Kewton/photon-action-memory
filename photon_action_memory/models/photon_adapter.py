@@ -7,6 +7,7 @@ when a checkpoint is configured and the optional adapter is constructed.
 from __future__ import annotations
 
 import importlib
+import logging
 import math
 import os
 from collections.abc import Callable, Sequence
@@ -17,7 +18,9 @@ from typing import Any
 from photon_action_memory.api.schema import EvidenceItem, Suggestion, SuggestRequest
 from photon_action_memory.models.checkpoint import (
     CheckpointError,
+    CheckpointState,
     PhotonCheckpoint,
+    load_checkpoint,
     load_checkpoint_manifest,
 )
 from photon_action_memory.models.state import (
@@ -28,7 +31,10 @@ from photon_action_memory.models.state import (
     ScoredFile,
 )
 
+_logger = logging.getLogger(__name__)
+
 CHECKPOINT_ENV = "PHOTON_ACTION_MEMORY_CHECKPOINT"
+CHECKPOINT_STRICT_ENV = "PHOTON_ACTION_MEMORY_CHECKPOINT_STRICT"
 PHOTON_MODEL_VERSION = "photon-action-memory-v0.1.0-mlx"
 
 
@@ -128,6 +134,23 @@ def configured_checkpoint_path(environ: os._Environ[str] | None = None) -> Path 
     return Path(raw)
 
 
+def load_configured_checkpoint_state() -> CheckpointState | None:
+    """Load configured checkpoint state, returning unavailable on failure."""
+
+    checkpoint_path = configured_checkpoint_path()
+    if checkpoint_path is None:
+        return None
+    try:
+        return load_checkpoint(checkpoint_path, verify_integrity=_strict_checkpoint_mode())
+    except (OSError, ValueError) as exc:
+        _logger.warning(
+            "PHOTON checkpoint at %s is unavailable; falling back to deterministic ranking: %s",
+            checkpoint_path,
+            exc,
+        )
+        return None
+
+
 def is_model_available(
     checkpoint_path: str | Path | None = None,
     *,
@@ -137,8 +160,9 @@ def is_model_available(
     path = Path(checkpoint_path) if checkpoint_path is not None else configured_checkpoint_path()
     if path is None:
         return False
+    strict = _strict_checkpoint_mode() if checkpoint_path is None else False
     try:
-        PhotonMLXAdapter.from_checkpoint(path, import_module=import_module)
+        PhotonMLXAdapter.from_checkpoint(path, strict=strict, import_module=import_module)
     except (CheckpointError, PhotonAdapterError):
         return False
     return True
@@ -156,7 +180,10 @@ def score_suggestions_with_optional_adapter(
         return None
 
     try:
-        adapter = PhotonMLXAdapter.from_checkpoint(checkpoint_path)
+        adapter = PhotonMLXAdapter.from_checkpoint(
+            checkpoint_path,
+            strict=_strict_checkpoint_mode(),
+        )
         state = PhotonScoringState.from_sidecar_request(request, evidence=evidence)
         action_candidates = [_candidate_from_suggestion(suggestion) for suggestion in suggestions]
         scored = adapter.score_actions(state, action_candidates)
@@ -180,6 +207,11 @@ def score_suggestions_with_optional_adapter(
         ],
         adapter.checkpoint.model_version or PHOTON_MODEL_VERSION,
     )
+
+
+def _strict_checkpoint_mode() -> bool:
+    raw_value = os.environ.get(CHECKPOINT_STRICT_ENV, "").strip().lower()
+    return raw_value in {"1", "true", "yes", "on", "strict"}
 
 
 def _import_mlx_core(
