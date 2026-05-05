@@ -19,6 +19,15 @@ from photon_action_memory.api.schema import (
     SuggestRequest,
     SuggestResponse,
 )
+from photon_action_memory.api.schema_v2 import (
+    DEFAULT_SCHEMA_VERSION_V2,
+    ContextPack,
+    ContextPackRequest,
+    ContextPackResponse,
+    ContextPackWarning,
+    TokenBudget,
+)
+from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
@@ -60,6 +69,63 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
     @app.post("/v1/suggest", response_model=SuggestResponse)
     def suggest(request: SuggestRequest) -> SuggestResponse:
         return build_fallback_suggestions(request)
+
+    @app.post("/v1/context/pack", response_model=ContextPackResponse)
+    def context_pack(request: ContextPackRequest) -> ContextPackResponse:
+        try:
+            route_warnings: list[ContextPackWarning] = []
+            if request.candidate_summary_ids:
+                route_warnings.append(
+                    ContextPackWarning(
+                        kind="summary_store_unavailable",
+                        message=(
+                            f"{len(request.candidate_summary_ids)} candidate summary ID(s) "
+                            "could not be resolved (no summary store)"
+                        ),
+                    )
+                )
+            pack, decisions = build_context_pack(
+                request_id=request.request_id,
+                session_id=None,
+                repo_id=request.repo.name,
+                summaries=[],
+                budget=request.budget,
+                warnings=route_warnings,
+            )
+            sidecar_status = "degraded" if route_warnings else "ok"
+        except Exception as exc:
+            empty_pack = ContextPack(
+                schema_version=DEFAULT_SCHEMA_VERSION_V2,
+                request_id=request.request_id,
+                session_id=None,
+                repo_id=None,
+                mode="summary_only",
+                items=[],
+                omitted=[],
+                warnings=[ContextPackWarning(kind="pack_error", message=str(exc))],
+                token_budget=TokenBudget(
+                    max_tokens=request.budget.max_memory_tokens,
+                    estimated_tokens=0,
+                    tokens_saved_vs_raw=0,
+                ),
+            )
+            return ContextPackResponse(
+                schema_version=DEFAULT_SCHEMA_VERSION_V2,
+                request_id=request.request_id,
+                model_version=FALLBACK_MODEL_VERSION,
+                sidecar_status="fail-open",
+                context_pack=empty_pack,
+                admission_decisions=[],
+            )
+
+        return ContextPackResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            model_version=FALLBACK_MODEL_VERSION,
+            sidecar_status=sidecar_status,
+            context_pack=pack,
+            admission_decisions=decisions,
+        )
 
     @app.post("/v1/summarize")
     def summarize_stub() -> None:
