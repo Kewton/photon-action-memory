@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from photon_action_memory.api.schema_v2 import (
     DEFAULT_SCHEMA_VERSION_V2,
     ActionSummary,
+    AdmissionPolicy,
     ContextAdmissionDecision,
     ContextPack,
     ContextPackBudget,
@@ -14,7 +17,15 @@ from photon_action_memory.api.schema_v2 import (
 )
 from photon_action_memory.context.admission import ContextAdmissionController
 from photon_action_memory.context.budget import TokenBudgetTracker
+from photon_action_memory.context.raw_policy import RawEvidenceItem, evaluate_raw_item
 from photon_action_memory.context.render import estimate_tokens, render_summary
+
+_RAW_ADMISSION_POLICY = AdmissionPolicy(raw_evidence_policy="raw_tool_log_default_deny")
+
+
+def _raw_decision_id(item_id: str) -> str:
+    digest = hashlib.sha256(item_id.encode()).hexdigest()[:12]
+    return f"dec-raw-{digest}"
 
 
 def build_context_pack(
@@ -25,12 +36,16 @@ def build_context_pack(
     summaries: list[ActionSummary],
     budget: ContextPackBudget,
     warnings: list[ContextPackWarning] | None = None,
+    raw_items: list[RawEvidenceItem] | None = None,
 ) -> tuple[ContextPack, list[ContextAdmissionDecision]]:
     """Run the admission pipeline and return a ContextPack with decisions.
 
     Pure helper; can be tested without HTTP. Never raises for recoverable
     failures; callers should wrap in a try/except and set sidecar_status
     accordingly.
+
+    Raw items are always denied under the default-deny policy and recorded
+    in ``omitted``; they never appear in ``items[*].text``.
     """
     tracker = TokenBudgetTracker(max_tokens=budget.max_memory_tokens)
     controller = ContextAdmissionController(tracker)
@@ -69,6 +84,28 @@ def build_context_pack(
                     reason=reason or "omitted",
                 )
             )
+
+    # Raw tool-log items are denied unconditionally; they must not appear in items.
+    for raw_item in raw_items or []:
+        _, reason = evaluate_raw_item(raw_item)
+        decisions.append(
+            ContextAdmissionDecision(
+                schema_version=DEFAULT_SCHEMA_VERSION_V2,
+                decision_id=_raw_decision_id(raw_item.item_id),
+                item_id=raw_item.item_id,
+                item_kind="raw_tool_log",
+                decision="deny",
+                reason=reason,
+                policy=_RAW_ADMISSION_POLICY,
+            )
+        )
+        omitted.append(
+            OmittedItem(
+                kind=raw_item.kind,
+                id=raw_item.item_id,
+                reason=reason,
+            )
+        )
 
     pack = ContextPack(
         schema_version=DEFAULT_SCHEMA_VERSION_V2,

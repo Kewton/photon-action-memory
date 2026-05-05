@@ -28,6 +28,7 @@ from photon_action_memory.api.schema_v2 import (
     TokenBudget,
 )
 from photon_action_memory.context.pack import build_context_pack
+from photon_action_memory.context.raw_policy import RawEvidenceItem
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
@@ -84,6 +85,7 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
                         ),
                     )
                 )
+            raw_items = _extract_raw_items(request)
             pack, decisions = build_context_pack(
                 request_id=request.request_id,
                 session_id=None,
@@ -91,6 +93,7 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
                 summaries=[],
                 budget=request.budget,
                 warnings=route_warnings,
+                raw_items=raw_items,
             )
             sidecar_status = "degraded" if route_warnings else "ok"
         except Exception as exc:
@@ -136,6 +139,27 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
         raise HTTPException(status_code=501, detail="evaluate is not implemented in M2")
 
     return app
+
+
+def _extract_raw_items(request: ContextPackRequest) -> list[RawEvidenceItem]:
+    """Extract raw evidence items from request extra fields."""
+    extras = request.model_extra or {}
+    raw_evidence = extras.get("raw_evidence")
+    if not isinstance(raw_evidence, list):
+        return []
+    items: list[RawEvidenceItem] = []
+    for i, entry in enumerate(raw_evidence):
+        if not isinstance(entry, dict):
+            continue
+        items.append(
+            RawEvidenceItem(
+                item_id=str(entry.get("item_id", f"raw-{i}")),
+                kind=str(entry.get("kind", "raw_output")),
+                content=str(entry.get("content", "")),
+                source=str(entry["source"]) if entry.get("source") else None,
+            )
+        )
+    return items
 
 
 def build_fallback_suggestions(request: SuggestRequest) -> SuggestResponse:
