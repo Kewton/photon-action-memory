@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from photon_action_memory.api.schema_v2 import (
     DEFAULT_SCHEMA_VERSION_V2,
@@ -795,7 +795,9 @@ class TestSummaryValidate:
     ],
 )
 def test_unknown_optional_fields_do_not_break_validation(
-    model: type, base_payload: dict, extra: dict
+    model: type[BaseModel],
+    base_payload: dict[str, object],
+    extra: dict[str, object],
 ) -> None:
     instance = model.model_validate({**base_payload, **extra})
     dumped = instance.model_dump()
@@ -844,6 +846,8 @@ def test_unknown_optional_fields_do_not_break_validation(
         ),
     ],
 )
-def test_wrong_schema_version_fails(model: type, base_payload: dict) -> None:
+def test_wrong_schema_version_fails(
+    model: type[BaseModel], base_payload: dict[str, object]
+) -> None:
     with pytest.raises(ValidationError):
         model.model_validate(base_payload)
