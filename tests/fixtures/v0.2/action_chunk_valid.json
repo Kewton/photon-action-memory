@@ -1,0 +1,16 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "chunk_id": "chunk_017",
+  "session_id": "sess_001",
+  "turn_id": "turn_006",
+  "repo_id": "repo_001",
+  "commit": "abc123",
+  "kind": "repo_search",
+  "event_ids": ["evt_041", "evt_042", "evt_043"],
+  "started_at": "2026-04-30T10:00:00Z",
+  "ended_at": "2026-04-30T10:02:00Z",
+  "summary": "Searched SessionStore and found primary implementation in src/session/store.rs.",
+  "outcome": "useful",
+  "risk": "low",
+  "redaction_status": "sanitized"
+}

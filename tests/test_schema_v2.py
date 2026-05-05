@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import BaseModel, ValidationError
 
@@ -22,6 +24,7 @@ from photon_action_memory.api.schema_v2 import (
 )
 
 SCHEMA_V2 = DEFAULT_SCHEMA_VERSION_V2
+FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "v0.2"
 
 
 # ---------------------------------------------------------------------------
@@ -851,3 +854,92 @@ def test_wrong_schema_version_fails(
 ) -> None:
     with pytest.raises(ValidationError):
         model.model_validate(base_payload)
+
+
+# ---------------------------------------------------------------------------
+# Issue #33: JSON fixture round-trip validation
+# ---------------------------------------------------------------------------
+
+
+def test_action_chunk_fixture_round_trip() -> None:
+    raw = (FIXTURE_ROOT / "action_chunk_valid.json").read_text()
+    chunk = ActionChunk.model_validate_json(raw)
+    rt = ActionChunk.model_validate_json(chunk.model_dump_json())
+
+    assert rt.schema_version == SCHEMA_V2
+    assert rt.chunk_id == "chunk_017"
+    assert rt.kind == "repo_search"
+    assert rt.outcome == "useful"
+    assert rt.risk == "low"
+    assert rt.event_ids == ["evt_041", "evt_042", "evt_043"]
+    assert rt.redaction_status == "sanitized"
+
+
+def test_evidence_ref_fixture_round_trip() -> None:
+    raw = (FIXTURE_ROOT / "evidence_ref_valid.json").read_text()
+    ref = EvidenceRef.model_validate_json(raw)
+    rt = EvidenceRef.model_validate_json(ref.model_dump_json())
+
+    assert rt.schema_version == SCHEMA_V2
+    assert rt.evidence_id == "evt_052"
+    assert rt.kind == "test_output"
+    assert rt.expand_policy == "on_demand_only"
+    assert rt.max_expand_chars == 1200
+    assert rt.staleness.status == "valid"
+    assert rt.locator is not None
+    assert rt.locator.file == "tests/session_persistence.rs"
+    assert rt.locator.line_start == 42
+
+
+def test_action_summary_fixture_round_trip() -> None:
+    raw = (FIXTURE_ROOT / "action_summary_valid.json").read_text()
+    summary = ActionSummary.model_validate_json(raw)
+    rt = ActionSummary.model_validate_json(summary.model_dump_json())
+
+    assert rt.schema_version == SCHEMA_V2
+    assert rt.summary_id == "sum_001"
+    assert rt.task_signature == "fix-session-persistence-test"
+    assert rt.summary_level == "chunk"
+    assert rt.validity.status == "valid"
+    assert rt.token_cost is not None
+    assert rt.token_cost.tokens_saved_vs_raw == 4960
+
+
+def test_context_pack_fixture_round_trip() -> None:
+    raw = (FIXTURE_ROOT / "context_pack_omits_raw.json").read_text()
+    pack = ContextPack.model_validate_json(raw)
+    rt = ContextPack.model_validate_json(pack.model_dump_json())
+
+    assert rt.schema_version == SCHEMA_V2
+    assert rt.request_id == "turn_123"
+    assert rt.mode == "summary_only"
+
+
+def test_action_summary_fixture_separates_facts_and_hypotheses() -> None:
+    raw = (FIXTURE_ROOT / "action_summary_valid.json").read_text()
+    summary = ActionSummary.model_validate_json(raw)
+
+    assert summary.facts
+    assert summary.hypotheses
+    assert summary.failed_attempts
+    assert summary.avoid
+
+    assert summary.facts[0].evidence_ids
+    assert 0.0 <= summary.facts[0].confidence <= 1.0
+    assert summary.hypotheses[0].evidence_ids
+    assert summary.hypotheses[0].status == "open"
+    assert summary.failed_attempts[0].evidence_ids
+    assert summary.avoid[0].evidence_ids
+
+
+def test_context_pack_fixture_omits_raw_tool_output() -> None:
+    raw = (FIXTURE_ROOT / "context_pack_omits_raw.json").read_text()
+    pack = ContextPack.model_validate_json(raw)
+
+    item_kinds = {item.kind for item in pack.items}
+    omitted_kinds = {omitted.kind for omitted in pack.omitted}
+
+    assert "raw_tool_output" not in item_kinds
+    assert "raw_tool_output" in omitted_kinds
+    assert pack.token_budget.tokens_saved_vs_raw is not None
+    assert pack.token_budget.tokens_saved_vs_raw > 0

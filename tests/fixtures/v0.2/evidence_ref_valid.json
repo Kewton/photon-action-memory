@@ -1,0 +1,21 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "evidence_id": "evt_052",
+  "source_event_id": "evt_052",
+  "source_chunk_id": "chunk_018",
+  "kind": "test_output",
+  "summary": "cargo test session_persistence failed with serialization mismatch.",
+  "locator": {
+    "file": "tests/session_persistence.rs",
+    "line_start": 42,
+    "line_end": 57,
+    "command": "cargo test session_persistence"
+  },
+  "redaction_status": "sanitized",
+  "expand_policy": "on_demand_only",
+  "max_expand_chars": 1200,
+  "staleness": {
+    "status": "valid",
+    "reason": null
+  }
+}
