@@ -1,0 +1,80 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "sum_001",
+  "session_id": "sess_001",
+  "repo_id": "repo_001",
+  "commit": "abc123",
+  "task_signature": "fix-session-persistence-test",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["chunk_017", "chunk_018"],
+  "actions_done": [
+    {
+      "kind": "search",
+      "target": "SessionStore",
+      "outcome": "primary implementation found",
+      "status": "useful",
+      "evidence_ids": ["evt_041"]
+    },
+    {
+      "kind": "test",
+      "command": "cargo test session_persistence",
+      "outcome": "failed with serialization mismatch",
+      "status": "unresolved",
+      "evidence_ids": ["evt_052"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "SessionStore implementation is in src/session/store.rs.",
+      "evidence_ids": ["evt_041"],
+      "confidence": 0.95
+    }
+  ],
+  "hypotheses": [
+    {
+      "text": "The failure may be related to the serde path.",
+      "evidence_ids": ["evt_052"],
+      "confidence": 0.62,
+      "status": "open"
+    }
+  ],
+  "failed_attempts": [
+    {
+      "action": "rerun cargo test session_persistence without code changes",
+      "outcome": "same failure",
+      "evidence_ids": ["evt_052"],
+      "retry_policy": "avoid_until_files_changed"
+    }
+  ],
+  "avoid": [
+    {
+      "action": "repo-wide grep for SessionStore",
+      "reason": "already performed successfully",
+      "valid_until": "files_changed",
+      "evidence_ids": ["evt_041"]
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "read",
+      "target": "src/session/store.rs",
+      "reason": "primary implementation file",
+      "confidence": 0.78
+    },
+    {
+      "kind": "inspect",
+      "target": "tests/session_persistence.rs",
+      "reason": "failing test location",
+      "confidence": 0.74
+    }
+  ],
+  "token_cost": {
+    "estimated_summary_tokens": 240,
+    "estimated_raw_tokens": 5200,
+    "tokens_saved_vs_raw": 4960
+  },
+  "validity": {
+    "status": "valid",
+    "reason": null
+  }
+}

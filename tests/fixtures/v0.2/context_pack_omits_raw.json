@@ -1,0 +1,48 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "turn_123",
+  "session_id": "sess_001",
+  "repo_id": "repo_001",
+  "mode": "summary_only",
+  "items": [
+    {
+      "kind": "action_summary",
+      "id": "sum_001",
+      "text": "Searched SessionStore; primary implementation found in src/session/store.rs. cargo test session_persistence failed with serialization mismatch.",
+      "evidence_ids": ["evt_041", "evt_052"],
+      "admission_reason": "useful_recent_task_state"
+    },
+    {
+      "kind": "avoid",
+      "id": "avoid_001",
+      "text": "Do not rerun repo-wide grep for SessionStore unless files changed.",
+      "evidence_ids": ["evt_041"],
+      "admission_reason": "repeat_exploration_guard"
+    },
+    {
+      "kind": "hypothesis",
+      "id": "hyp_001",
+      "text": "The serde path may be related, but this is not confirmed.",
+      "evidence_ids": ["evt_052"],
+      "admission_reason": "open_hypothesis"
+    }
+  ],
+  "omitted": [
+    {
+      "kind": "raw_tool_output",
+      "id": "evt_052_raw",
+      "reason": "raw output exceeds budget; summary is sufficient"
+    }
+  ],
+  "warnings": [
+    {
+      "kind": "repeat_failure",
+      "message": "One previous test command failed and should not be repeated without code changes."
+    }
+  ],
+  "token_budget": {
+    "max_tokens": 800,
+    "estimated_tokens": 260,
+    "tokens_saved_vs_raw": 5200
+  }
+}
