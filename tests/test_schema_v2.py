@@ -246,16 +246,34 @@ class TestActionSummary:
             {
                 **self._base(),
                 "facts": [
-                    {"text": "SessionStore is in store.rs.", "evidence_ids": ["evt_041"], "confidence": 0.95}
+                    {
+                        "text": "SessionStore is in store.rs.",
+                        "evidence_ids": ["evt_041"],
+                        "confidence": 0.95,
+                    }
                 ],
                 "hypotheses": [
-                    {"text": "serde path may be involved.", "evidence_ids": ["evt_052"], "confidence": 0.62, "status": "open"}
+                    {
+                        "text": "serde path may be involved.",
+                        "evidence_ids": ["evt_052"],
+                        "confidence": 0.62,
+                        "status": "open",
+                    }
                 ],
                 "failed_attempts": [
-                    {"action": "cargo test without changes", "outcome": "same failure", "evidence_ids": ["evt_052"], "retry_policy": "avoid_until_files_changed"}
+                    {
+                        "action": "cargo test without changes",
+                        "outcome": "same failure",
+                        "evidence_ids": ["evt_052"],
+                        "retry_policy": "avoid_until_files_changed",
+                    }
                 ],
                 "avoid": [
-                    {"action": "repo-wide grep for SessionStore", "reason": "already done", "evidence_ids": ["evt_041"]}
+                    {
+                        "action": "repo-wide grep for SessionStore",
+                        "reason": "already done",
+                        "evidence_ids": ["evt_041"],
+                    }
                 ],
             }
         )
@@ -273,10 +291,21 @@ class TestActionSummary:
             {
                 **self._base(),
                 "actions_done": [
-                    {"kind": "search", "target": "SessionStore", "outcome": "found", "status": "useful", "evidence_ids": ["evt_041"]}
+                    {
+                        "kind": "search",
+                        "target": "SessionStore",
+                        "outcome": "found",
+                        "status": "useful",
+                        "evidence_ids": ["evt_041"],
+                    }
                 ],
                 "next_hints": [
-                    {"kind": "read", "target": "src/session/store.rs", "reason": "primary impl", "confidence": 0.78}
+                    {
+                        "kind": "read",
+                        "target": "src/session/store.rs",
+                        "reason": "primary impl",
+                        "confidence": 0.78,
+                    }
                 ],
             }
         )
@@ -341,10 +370,19 @@ class TestActionSummary:
                 },
             ],
             "facts": [
-                {"text": "SessionStore in store.rs", "evidence_ids": ["evt_041"], "confidence": 0.95}
+                {
+                    "text": "SessionStore in store.rs",
+                    "evidence_ids": ["evt_041"],
+                    "confidence": 0.95,
+                }
             ],
             "hypotheses": [
-                {"text": "serde path related", "evidence_ids": ["evt_052"], "confidence": 0.62, "status": "open"}
+                {
+                    "text": "serde path related",
+                    "evidence_ids": ["evt_052"],
+                    "confidence": 0.62,
+                    "status": "open",
+                }
             ],
             "failed_attempts": [
                 {
@@ -363,7 +401,12 @@ class TestActionSummary:
                 }
             ],
             "next_hints": [
-                {"kind": "read", "target": "src/session/store.rs", "reason": "primary impl", "confidence": 0.78}
+                {
+                    "kind": "read",
+                    "target": "src/session/store.rs",
+                    "reason": "primary impl",
+                    "confidence": 0.78,
+                }
             ],
             "token_cost": {
                 "estimated_summary_tokens": 240,
@@ -525,9 +568,7 @@ class TestContextPack:
         assert "token_budget" in str(exc_info.value)
 
     def test_unknown_fields_preserved(self) -> None:
-        pack = ContextPack.model_validate(
-            {**minimal_context_pack(), "canary_mode": True}
-        )
+        pack = ContextPack.model_validate({**minimal_context_pack(), "canary_mode": True})
         assert pack.model_dump()["canary_mode"] is True
 
 

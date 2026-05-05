@@ -10,7 +10,13 @@ from typing import Literal
 
 from pydantic import Field
 
-from photon_action_memory.api.schema import AgentInfo, RepoInfo, SidecarModel, TaskState, WorkingMemory
+from photon_action_memory.api.schema import (
+    AgentInfo,
+    RepoInfo,
+    SidecarModel,
+    TaskState,
+    WorkingMemory,
+)
 
 SchemaVersionV2 = Literal["action-memory.v0.2"]
 DEFAULT_SCHEMA_VERSION_V2: SchemaVersionV2 = "action-memory.v0.2"
