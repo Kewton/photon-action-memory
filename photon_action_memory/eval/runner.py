@@ -12,6 +12,12 @@ from photon_action_memory.eval.comparison import (
     RawComparisonRecord,
     build_comparison_report,
 )
+from photon_action_memory.eval.local_llm import (
+    LocalLLMModelMeta,
+    LocalLLMReport,
+    RawLocalLLMRecord,
+    build_local_llm_report,
+)
 from photon_action_memory.eval.metrics import MetricsReport, RawRecord, build_metrics_report
 
 
@@ -91,12 +97,45 @@ def write_comparison_report(report: ComparisonReport, output_path: str | Path) -
     path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
 
 
+def run_local_llm(
+    records: Iterable[RawLocalLLMRecord],
+    *,
+    model_meta: LocalLLMModelMeta | Mapping[str, Any] | None = None,
+    output_path: str | Path | None = None,
+) -> LocalLLMReport:
+    """Run local LLM metrics over normalized records and optionally write aggregate JSON."""
+    report = build_local_llm_report(list(records), model_meta=model_meta)
+    if output_path is not None:
+        write_local_llm_report(report, output_path)
+    return report
+
+
+def run_local_llm_fixture(
+    fixture_path: str | Path,
+    *,
+    model_meta: LocalLLMModelMeta | Mapping[str, Any] | None = None,
+    output_path: str | Path | None = None,
+) -> LocalLLMReport:
+    """Load a JSON fixture and run aggregate local LLM metrics."""
+    return run_local_llm(load_fixture(fixture_path), model_meta=model_meta, output_path=output_path)
+
+
+def write_local_llm_report(report: LocalLLMReport, output_path: str | Path) -> None:
+    """Write the aggregate local LLM report without raw fixture records."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
 __all__ = [
     "load_fixture",
     "run_comparison",
     "run_comparison_fixture",
     "run_eval",
     "run_fixture",
+    "run_local_llm",
+    "run_local_llm_fixture",
     "write_comparison_report",
+    "write_local_llm_report",
     "write_metrics_report",
 ]
