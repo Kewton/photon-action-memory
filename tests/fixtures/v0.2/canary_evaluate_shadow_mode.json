@@ -1,0 +1,21 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "eval-canary-001",
+  "session_id": "sess-canary",
+  "agent": {
+    "name": "neutral-agent",
+    "version": "canary-shadow"
+  },
+  "context_pack_event": {
+    "context_pack_request_id": "pack-canary-001",
+    "adoption_status": "partial",
+    "ignored_reason": null,
+    "evidence_expand_requested": false,
+    "evidence_ids_expanded": [],
+    "items_adopted_count": 2,
+    "items_ignored_count": 1,
+    "outcome": "success",
+    "outcome_detail": "Canary shadow-mode tracked partial adoption of low-risk summary-only context.",
+    "latency_ms": 64.2
+  }
+}
