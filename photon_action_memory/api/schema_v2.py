@@ -434,6 +434,54 @@ class SummaryValidateResponse(SidecarModel):
     results: list[SummaryValidationResult] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# POST /v1/evaluate — ContextPack adoption and outcome logging
+# ---------------------------------------------------------------------------
+
+ContextPackAdoptionStatus = Literal["adopted", "ignored", "partial"]
+
+
+class ContextPackEvalEvent(SidecarModel):
+    """One turn's ContextPack adoption event logged through POST /v1/evaluate.
+
+    Records whether the ContextPack built by POST /v1/context/pack was actually
+    injected into the LLM prompt, partially used, or ignored, along with the
+    final task outcome.  Any coding agent (not just Anvil) should log this after
+    every turn where a ContextPack was requested.
+    """
+
+    context_pack_request_id: str
+    adoption_status: ContextPackAdoptionStatus | str = "adopted"
+    ignored_reason: str | None = None
+    evidence_expand_requested: bool = False
+    evidence_ids_expanded: list[str] = Field(default_factory=list)
+    items_adopted_count: int = Field(default=0, ge=0)
+    items_ignored_count: int = Field(default=0, ge=0)
+    outcome: str | None = None
+    outcome_detail: str | None = None
+    latency_ms: float | None = Field(default=None, ge=0)
+
+
+class EvaluateRequest(SidecarModel):
+    """Request body for POST /v1/evaluate."""
+
+    schema_version: SchemaVersionV2
+    request_id: str
+    session_id: str | None = None
+    agent: AgentInfo | None = None
+    context_pack_event: ContextPackEvalEvent | None = None
+
+
+class EvaluateResponse(SidecarModel):
+    """Response body for POST /v1/evaluate."""
+
+    schema_version: SchemaVersionV2
+    request_id: str
+    logged: int = Field(default=0, ge=0)
+    status: str = "ok"
+    warnings: list[ContextPackWarning] = Field(default_factory=list)
+
+
 __all__ = [
     "DEFAULT_SCHEMA_VERSION_V2",
     "ActionChunk",
@@ -446,12 +494,16 @@ __all__ = [
     "ChunkOutcome",
     "ContextAdmissionDecision",
     "ContextPack",
+    "ContextPackAdoptionStatus",
     "ContextPackBudget",
+    "ContextPackEvalEvent",
     "ContextPackItem",
     "ContextPackMode",
     "ContextPackRequest",
     "ContextPackResponse",
     "ContextPackWarning",
+    "EvaluateRequest",
+    "EvaluateResponse",
     "EvidenceExpandBudget",
     "EvidenceExpandPolicy",
     "EvidenceExpandRequest",

@@ -1,0 +1,21 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "eval-req-ignored-001",
+  "session_id": "sess_eval_001",
+  "agent": {
+    "name": "example-coding-agent",
+    "version": "0.3.0"
+  },
+  "context_pack_event": {
+    "context_pack_request_id": "pack-req-002",
+    "adoption_status": "ignored",
+    "ignored_reason": "existing_plan_had_higher_priority",
+    "evidence_expand_requested": false,
+    "evidence_ids_expanded": [],
+    "items_adopted_count": 0,
+    "items_ignored_count": 2,
+    "outcome": "partial",
+    "outcome_detail": "Agent proceeded with an existing in-progress plan; ContextPack was available but not injected.",
+    "latency_ms": 88.0
+  }
+}
