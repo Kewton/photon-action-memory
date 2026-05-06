@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
@@ -25,14 +27,20 @@ from photon_action_memory.api.schema_v2 import (
     ContextPackRequest,
     ContextPackResponse,
     ContextPackWarning,
+    EvidenceExpandRequest,
+    EvidenceExpandResponse,
+    OmittedEvidence,
     TokenBudget,
 )
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.raw_policy import RawEvidenceItem
+from photon_action_memory.memory.evidence import EvidenceExpander
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
 from photon_action_memory.ranking.guards import fallback_warnings
+
+logger = logging.getLogger(__name__)
 
 
 def health_payload() -> dict[str, str]:
@@ -129,6 +137,28 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
             context_pack=pack,
             admission_decisions=decisions,
         )
+
+    @app.post("/v1/evidence/expand", response_model=EvidenceExpandResponse)
+    def expand_evidence(request: EvidenceExpandRequest) -> EvidenceExpandResponse:
+        try:
+            records: list[dict[str, Any]] = [ev.payload for ev in event_store.list_events()]
+            extras = request.model_extra or {}
+            extra_records = extras.get("evidence_records")
+            if isinstance(extra_records, list):
+                records.extend(r for r in extra_records if isinstance(r, dict))
+            expander = EvidenceExpander(records=records)
+            return expander.expand(request)
+        except Exception as exc:
+            logger.warning("evidence expand error: %s", exc)
+            return EvidenceExpandResponse(
+                schema_version=DEFAULT_SCHEMA_VERSION_V2,
+                request_id=request.request_id,
+                expanded=[],
+                omitted=[
+                    OmittedEvidence(evidence_id=eid, reason=f"expansion error: {exc}")
+                    for eid in request.evidence_ids
+                ],
+            )
 
     @app.post("/v1/summarize")
     def summarize_stub() -> None:
