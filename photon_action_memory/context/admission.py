@@ -37,7 +37,10 @@ class ContextAdmissionController:
     def evaluate(self, summary: ActionSummary) -> tuple[str, str | None]:
         """Return (decision, reason) for *summary*."""
         if summary.validity.status in _STALE_STATUSES:
-            return "omit", f"summary is {summary.validity.status}"
+            base_reason = f"summary is {summary.validity.status}"
+            if summary.validity.reason:
+                return "omit", f"{base_reason}: {summary.validity.reason}"
+            return "omit", base_reason
 
         has_content = bool(
             summary.facts or summary.hypotheses or summary.failed_attempts or summary.avoid
