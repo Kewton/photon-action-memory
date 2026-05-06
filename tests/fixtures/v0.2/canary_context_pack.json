@@ -1,0 +1,58 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "pack-canary-001",
+  "session_id": "sess-canary",
+  "repo_id": "repo-neutral",
+  "mode": "summary_only",
+  "items": [
+    {
+      "kind": "action_summary",
+      "id": "summary-only-1",
+      "text": "Previously read photon_action_memory/context/pack.py and confirmed summary-only ContextPack behavior.",
+      "evidence_ids": ["ev-read-1"],
+      "admission_reason": "canary allowed low-risk action class: summary_only_memory"
+    },
+    {
+      "kind": "warning",
+      "id": "repeat-search-warning-1",
+      "text": "Avoid repeating the same search query; prior search already covered ContextPack admission policy.",
+      "evidence_ids": [],
+      "admission_reason": "canary allowed low-risk action class: repeat_search_warning"
+    },
+    {
+      "kind": "warning",
+      "id": "test-command-candidate-1",
+      "text": "Low-risk verification candidate: python -m pytest tests/test_context_pack.py -q",
+      "evidence_ids": [],
+      "admission_reason": "canary allowed low-risk action class: test_command_candidate"
+    }
+  ],
+  "omitted": [
+    {
+      "kind": "shell_command",
+      "id": "rm-command-1",
+      "reason": "canary denied action class: destructive_shell_command"
+    },
+    {
+      "kind": "edit_approval",
+      "id": "auto-edit-1",
+      "reason": "canary denied action class: edit_auto_approval"
+    },
+    {
+      "kind": "stdout",
+      "id": "raw-stdout-1",
+      "reason": "raw tool log default deny policy: kind 'stdout' is always denied"
+    }
+  ],
+  "warnings": [
+    {
+      "kind": "canary_shadow_mode",
+      "message": "Canary mode admitted low-risk summary-only context and recorded denied classes for shadow-mode evaluation."
+    }
+  ],
+  "token_budget": {
+    "max_tokens": 512,
+    "estimated_tokens": 42,
+    "tokens_saved_vs_raw": 958
+  }
+}
