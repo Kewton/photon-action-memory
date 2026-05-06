@@ -96,15 +96,31 @@ def test_suggest_returns_no_model_fallback(tmp_path: Path) -> None:
     ]
 
 
-def test_summarize_and_evaluate_are_m2_stubs(tmp_path: Path) -> None:
+def test_summarize_is_m2_stub(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
 
     with TestClient(app) as client:
         summarize_response = client.post("/v1/summarize", json={})
-        evaluate_response = client.post("/v1/evaluate", json={})
 
     assert summarize_response.status_code == 501
-    assert evaluate_response.status_code == 501
+
+
+def test_evaluate_returns_ok_for_valid_request(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+
+    with TestClient(app) as client:
+        evaluate_response = client.post(
+            "/v1/evaluate",
+            json={
+                "schema_version": "action-memory.v0.2",
+                "request_id": "sidecar-eval-001",
+            },
+        )
+
+    assert evaluate_response.status_code == 200
+    data = evaluate_response.json()
+    assert data["logged"] == 0
+    assert data["status"] == "ok"
 
 
 def test_client_suggest_fails_open_on_sidecar_error() -> None:

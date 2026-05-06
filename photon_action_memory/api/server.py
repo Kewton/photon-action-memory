@@ -28,6 +28,8 @@ from photon_action_memory.api.schema_v2 import (
     ContextPackRequest,
     ContextPackResponse,
     ContextPackWarning,
+    EvaluateRequest,
+    EvaluateResponse,
     EvidenceExpandRequest,
     EvidenceExpandResponse,
     OmittedEvidence,
@@ -200,9 +202,42 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
     def summarize_stub() -> None:
         raise HTTPException(status_code=501, detail="summarize is not implemented in M2")
 
-    @app.post("/v1/evaluate")
-    def evaluate_stub() -> None:
-        raise HTTPException(status_code=501, detail="evaluate is not implemented in M2")
+    @app.post("/v1/evaluate", response_model=EvaluateResponse)
+    def evaluate(request: EvaluateRequest) -> EvaluateResponse:
+        logged = 0
+        route_warnings: list[ContextPackWarning] = []
+        try:
+            if request.context_pack_event is not None:
+                evt = request.context_pack_event
+                payload: dict[str, Any] = {
+                    "event_type": "context_pack_eval",
+                    "session_id": request.session_id or request.request_id,
+                    "turn_id": request.request_id,
+                    "repo_id": "unknown",
+                    "request_id": request.request_id,
+                    "context_pack_request_id": evt.context_pack_request_id,
+                    "adoption_status": evt.adoption_status,
+                    "ignored_reason": evt.ignored_reason,
+                    "evidence_expand_requested": evt.evidence_expand_requested,
+                    "evidence_ids_expanded": evt.evidence_ids_expanded,
+                    "items_adopted_count": evt.items_adopted_count,
+                    "items_ignored_count": evt.items_ignored_count,
+                    "outcome": evt.outcome,
+                    "outcome_detail": evt.outcome_detail,
+                    "latency_ms": evt.latency_ms,
+                }
+                event_store.append(payload)
+                logged += 1
+        except Exception as exc:
+            logger.warning("evaluate log error: %s", exc)
+            route_warnings.append(ContextPackWarning(kind="eval_log_error", message=str(exc)))
+        return EvaluateResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            logged=logged,
+            status="ok" if not route_warnings else "degraded",
+            warnings=route_warnings,
+        )
 
     return app
 

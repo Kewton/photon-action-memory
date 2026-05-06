@@ -1,0 +1,61 @@
+{
+  "schema": "context-pack-eval.v1",
+  "description": "Multi-turn ContextPack adoption log fixture for aggregate eval testing.",
+  "records": [
+    {
+      "context_pack_request_id": "pack-req-001",
+      "adoption_status": "adopted",
+      "ignored_reason": null,
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 3,
+      "items_ignored_count": 0,
+      "outcome": "success",
+      "latency_ms": 142.5
+    },
+    {
+      "context_pack_request_id": "pack-req-002",
+      "adoption_status": "ignored",
+      "ignored_reason": "existing_plan_had_higher_priority",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 2,
+      "outcome": "partial",
+      "latency_ms": 88.0
+    },
+    {
+      "context_pack_request_id": "pack-req-003",
+      "adoption_status": "adopted",
+      "ignored_reason": null,
+      "evidence_expand_requested": true,
+      "evidence_ids_expanded": ["ev-ref-007"],
+      "items_adopted_count": 2,
+      "items_ignored_count": 1,
+      "outcome": "success",
+      "latency_ms": 210.3
+    },
+    {
+      "context_pack_request_id": "pack-req-004",
+      "adoption_status": "partial",
+      "ignored_reason": null,
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 1,
+      "items_ignored_count": 2,
+      "outcome": "success",
+      "latency_ms": 175.0
+    },
+    {
+      "context_pack_request_id": "pack-req-005",
+      "adoption_status": "ignored",
+      "ignored_reason": "context_pack_empty",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": "failure",
+      "latency_ms": 55.1
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "eval-req-adopted-001",
+  "session_id": "sess_eval_001",
+  "agent": {
+    "name": "example-coding-agent",
+    "version": "0.3.0"
+  },
+  "context_pack_event": {
+    "context_pack_request_id": "pack-req-001",
+    "adoption_status": "adopted",
+    "ignored_reason": null,
+    "evidence_expand_requested": false,
+    "evidence_ids_expanded": [],
+    "items_adopted_count": 3,
+    "items_ignored_count": 0,
+    "outcome": "success",
+    "outcome_detail": "Task completed after injecting three ContextPack items into the prompt.",
+    "latency_ms": 142.5
+  }
+}
