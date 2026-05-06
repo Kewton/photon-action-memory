@@ -1,5 +1,13 @@
 """Offline and shadow evaluation utilities."""
 
+from photon_action_memory.eval.comparison import (
+    COMPARISON_REPORT_SCHEMA,
+    EVAL_CONDITIONS,
+    ComparisonRecord,
+    ComparisonReport,
+    ConditionSummary,
+    build_comparison_report,
+)
 from photon_action_memory.eval.metrics import (
     EvalAction,
     EvalSuggestion,
@@ -16,26 +24,38 @@ from photon_action_memory.eval.pollution import (
 )
 from photon_action_memory.eval.runner import (
     load_fixture,
+    run_comparison,
+    run_comparison_fixture,
     run_eval,
     run_fixture,
+    write_comparison_report,
     write_metrics_report,
 )
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 
 __all__ = [
+    "COMPARISON_REPORT_SCHEMA",
+    "EVAL_CONDITIONS",
     "EvalAction",
     "EvalSuggestion",
     "EvalWarning",
+    "ComparisonRecord",
+    "ComparisonReport",
+    "ConditionSummary",
     "MetricsReport",
     "PollutionRecord",
     "PollutionReport",
     "ShadowEvalRecord",
     "SummaryFidelityChecker",
+    "build_comparison_report",
     "build_metrics_report",
     "build_pollution_report",
     "load_fixture",
     "measure_context_pack",
+    "run_comparison",
+    "run_comparison_fixture",
     "run_eval",
     "run_fixture",
+    "write_comparison_report",
     "write_metrics_report",
 ]

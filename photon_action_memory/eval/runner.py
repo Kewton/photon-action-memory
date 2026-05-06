@@ -7,6 +7,11 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from photon_action_memory.eval.comparison import (
+    ComparisonReport,
+    RawComparisonRecord,
+    build_comparison_report,
+)
 from photon_action_memory.eval.metrics import MetricsReport, RawRecord, build_metrics_report
 
 
@@ -31,6 +36,27 @@ def run_fixture(
 ) -> MetricsReport:
     """Load a JSON fixture and run aggregate eval metrics."""
     return run_eval(load_fixture(fixture_path), top_k=top_k, output_path=output_path)
+
+
+def run_comparison(
+    records: Iterable[RawComparisonRecord],
+    *,
+    output_path: str | Path | None = None,
+) -> ComparisonReport:
+    """Run comparison eval over condition-labeled records and optionally write aggregate JSON."""
+    report = build_comparison_report(list(records))
+    if output_path is not None:
+        write_comparison_report(report, output_path)
+    return report
+
+
+def run_comparison_fixture(
+    fixture_path: str | Path,
+    *,
+    output_path: str | Path | None = None,
+) -> ComparisonReport:
+    """Load a JSON fixture and run aggregate comparison metrics."""
+    return run_comparison(load_fixture(fixture_path), output_path=output_path)
 
 
 def load_fixture(fixture_path: str | Path) -> list[Mapping[str, Any]]:
@@ -58,9 +84,19 @@ def write_metrics_report(report: MetricsReport, output_path: str | Path) -> None
     path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
 
 
+def write_comparison_report(report: ComparisonReport, output_path: str | Path) -> None:
+    """Write the aggregate comparison report without raw fixture records."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
 __all__ = [
     "load_fixture",
+    "run_comparison",
+    "run_comparison_fixture",
     "run_eval",
     "run_fixture",
+    "write_comparison_report",
     "write_metrics_report",
 ]
