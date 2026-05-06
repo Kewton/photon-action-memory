@@ -23,6 +23,7 @@ from photon_action_memory.api.schema import (
 )
 from photon_action_memory.api.schema_v2 import (
     DEFAULT_SCHEMA_VERSION_V2,
+    ActionSummary,
     ContextPack,
     ContextPackRequest,
     ContextPackResponse,
@@ -30,10 +31,13 @@ from photon_action_memory.api.schema_v2 import (
     EvidenceExpandRequest,
     EvidenceExpandResponse,
     OmittedEvidence,
+    SummaryValidateRequest,
+    SummaryValidateResponse,
     TokenBudget,
 )
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.raw_policy import RawEvidenceItem
+from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 from photon_action_memory.memory.evidence import EvidenceExpander
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
@@ -159,6 +163,38 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
                     for eid in request.evidence_ids
                 ],
             )
+
+    @app.post("/v1/summary/validate", response_model=SummaryValidateResponse)
+    def validate_summary(request: SummaryValidateRequest) -> SummaryValidateResponse:
+        try:
+            extras = request.model_extra or {}
+            raw_summaries = extras.get("summaries", [])
+            summaries: list[ActionSummary] = []
+            if isinstance(raw_summaries, list):
+                for item in raw_summaries:
+                    if isinstance(item, dict):
+                        try:
+                            summaries.append(ActionSummary.model_validate(item))
+                        except Exception as parse_exc:
+                            logger.warning("summary parse error: %s", parse_exc)
+
+            evidence_records: list[dict[str, Any]] = []
+            raw_evidence = extras.get("evidence_records")
+            if isinstance(raw_evidence, list):
+                evidence_records.extend(r for r in raw_evidence if isinstance(r, dict))
+            evidence_records.extend(ev.payload for ev in event_store.list_events())
+
+            checker = SummaryFidelityChecker(records=evidence_records)
+            results = checker.check_all(summaries)
+        except Exception as exc:
+            logger.warning("summary validate error: %s", exc)
+            results = []
+
+        return SummaryValidateResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            results=results,
+        )
 
     @app.post("/v1/summarize")
     def summarize_stub() -> None:

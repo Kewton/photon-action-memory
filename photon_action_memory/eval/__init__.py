@@ -14,6 +14,7 @@ from photon_action_memory.eval.runner import (
     run_fixture,
     write_metrics_report,
 )
+from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 
 __all__ = [
     "EvalAction",
@@ -21,6 +22,7 @@ __all__ = [
     "EvalWarning",
     "MetricsReport",
     "ShadowEvalRecord",
+    "SummaryFidelityChecker",
     "build_metrics_report",
     "load_fixture",
     "run_eval",
