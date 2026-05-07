@@ -1,0 +1,61 @@
+{
+  "schema": "context-pack-eval.v1",
+  "description": "Anvil evaluate feedback fixture: 3 quality turns (2 success, 1 failure), 2 excluded (error, shadow_not_injected). Used to test aggregate_anvil_feedback and FeedbackAdjustedContextScorer.",
+  "records": [
+    {
+      "context_pack_request_id": "pack-fb-001",
+      "adoption_status": "adopted",
+      "ignored_reason": null,
+      "evidence_expand_requested": true,
+      "evidence_ids_expanded": ["ev-useful-001"],
+      "items_adopted_count": 2,
+      "items_ignored_count": 0,
+      "outcome": "success",
+      "latency_ms": 120.0
+    },
+    {
+      "context_pack_request_id": "pack-fb-002",
+      "adoption_status": "adopted",
+      "ignored_reason": null,
+      "evidence_expand_requested": true,
+      "evidence_ids_expanded": ["ev-useful-001", "ev-useful-002"],
+      "items_adopted_count": 1,
+      "items_ignored_count": 1,
+      "outcome": "success",
+      "latency_ms": 95.0
+    },
+    {
+      "context_pack_request_id": "pack-fb-003",
+      "adoption_status": "ignored",
+      "ignored_reason": "context_pack_empty",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": "failure",
+      "latency_ms": 30.0
+    },
+    {
+      "context_pack_request_id": "pack-fb-004",
+      "adoption_status": "error",
+      "ignored_reason": "sidecar_error",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": null,
+      "latency_ms": 8.0
+    },
+    {
+      "context_pack_request_id": "pack-fb-005",
+      "adoption_status": "shadow_not_injected",
+      "ignored_reason": "shadow_mode_no_injection",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": null,
+      "latency_ms": 20.0
+    }
+  ]
+}

@@ -1,5 +1,11 @@
 """Offline and shadow evaluation utilities."""
 
+from photon_action_memory.eval.anvil_feedback import (
+    EXCLUDED_QUALITY_STATUSES,
+    EvidenceFeedback,
+    PackFeedback,
+    aggregate_anvil_feedback,
+)
 from photon_action_memory.eval.comparison import (
     COMPARISON_REPORT_SCHEMA,
     EVAL_CONDITIONS,
@@ -45,6 +51,10 @@ from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 
 __all__ = [
     "COMPARISON_REPORT_SCHEMA",
+    "EXCLUDED_QUALITY_STATUSES",
+    "EvidenceFeedback",
+    "PackFeedback",
+    "aggregate_anvil_feedback",
     "EVAL_CONDITIONS",
     "LOCAL_LLM_REPORT_SCHEMA",
     "EvalAction",
