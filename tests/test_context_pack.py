@@ -32,6 +32,7 @@ from photon_action_memory.context.budget import TokenBudgetTracker
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.render import estimate_tokens, render_summary
 from photon_action_memory.memory.store import SQLiteEventStore
+from photon_action_memory.memory.summary_store import SummaryStore
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -404,17 +405,17 @@ def test_context_pack_api_returns_summary_only_pack(tmp_path: Path) -> None:
     assert payload["admission_decisions"] == []
 
 
-def test_context_pack_api_degraded_when_summary_ids_given(tmp_path: Path) -> None:
+def test_context_pack_api_ok_when_unknown_summary_ids_given(tmp_path: Path) -> None:
+    # Unknown IDs are silently skipped now that the summary store is always available.
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
     with TestClient(app) as client:
         response = client.post("/v1/context/pack", json=_pack_request(candidate_ids=["sum-xyz"]))
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["sidecar_status"] == "degraded"
-    warnings = payload["context_pack"]["warnings"]
-    assert len(warnings) == 1
-    assert warnings[0]["kind"] == "summary_store_unavailable"
+    assert payload["sidecar_status"] == "ok"
+    assert payload["context_pack"]["warnings"] == []
+    assert payload["context_pack"]["items"] == []
 
 
 def test_context_pack_api_fail_open_on_internal_error(tmp_path: Path) -> None:
@@ -444,3 +445,63 @@ def test_context_pack_api_token_budget_in_response(tmp_path: Path) -> None:
     budget = response.json()["context_pack"]["token_budget"]
     assert budget["max_tokens"] == 500
     assert budget["estimated_tokens"] == 0
+
+
+def test_context_pack_api_resolves_stored_summaries(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    summary = _make_summary("sum-stored", facts=[_fact("stored fact about the repo")])
+    ss.upsert(summary)
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/context/pack",
+            json=_pack_request(candidate_ids=["sum-stored"]),
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidecar_status"] == "ok"
+    items = payload["context_pack"]["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == "sum-stored"
+    assert "FACT:" in items[0]["text"]
+
+
+def test_context_pack_api_excludes_stale_stored_summaries(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    stale = _make_summary("sum-stale", facts=[_fact("old fact")], validity_status="stale")
+    fresh = _make_summary("sum-fresh", facts=[_fact("fresh fact")])
+    ss.upsert(stale)
+    ss.upsert(fresh)
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/context/pack",
+            json=_pack_request(candidate_ids=["sum-stale", "sum-fresh"]),
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    items = payload["context_pack"]["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == "sum-fresh"
+
+
+def test_upsert_summary_api_stores_and_retrieves(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    upsert_payload = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "req-upsert-1",
+        "summary": _make_summary("sum-api-upsert", facts=[_fact("upserted fact")]).model_dump(
+            mode="json"
+        ),
+    }
+    with TestClient(app) as client:
+        resp = client.post("/v1/summary/upsert", json=upsert_payload)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["summary_id"] == "sum-api-upsert"
+    assert data["status"] == "stored"
+    assert ss.get("sum-api-upsert") is not None
