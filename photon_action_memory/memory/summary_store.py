@@ -116,9 +116,7 @@ class SummaryStore:
         return [ActionSummary.model_validate_json(row["payload_json"]) for row in rows]
 
     def count(self) -> int:
-        row = self._connection.execute(
-            "SELECT COUNT(*) AS cnt FROM action_summaries"
-        ).fetchone()
+        row = self._connection.execute("SELECT COUNT(*) AS cnt FROM action_summaries").fetchone()
         return int(row["cnt"])
 
     def _initialize_schema(self) -> None:

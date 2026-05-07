@@ -66,6 +66,7 @@ class SummaryUpsertResponse(SidecarModel):
     summary_id: str
     status: str
 
+
 logger = logging.getLogger(__name__)
 
 

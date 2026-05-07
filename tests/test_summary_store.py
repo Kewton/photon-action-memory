@@ -140,13 +140,17 @@ def test_upsert_preserves_created_at(tmp_path: Path) -> None:
         store.upsert(_summary("sum-x"))
         import sqlite3
 
-        row1 = sqlite3.connect(tmp_path / "s.sqlite").execute(
-            "SELECT created_at, updated_at FROM action_summaries WHERE summary_id='sum-x'"
-        ).fetchone()
+        row1 = (
+            sqlite3.connect(tmp_path / "s.sqlite")
+            .execute("SELECT created_at, updated_at FROM action_summaries WHERE summary_id='sum-x'")
+            .fetchone()
+        )
         store.upsert(_summary("sum-x", fact_text="v2"))
-        row2 = sqlite3.connect(tmp_path / "s.sqlite").execute(
-            "SELECT created_at, updated_at FROM action_summaries WHERE summary_id='sum-x'"
-        ).fetchone()
+        row2 = (
+            sqlite3.connect(tmp_path / "s.sqlite")
+            .execute("SELECT created_at, updated_at FROM action_summaries WHERE summary_id='sum-x'")
+            .fetchone()
+        )
     assert row1[0] == row2[0], "created_at must not change on update"
     assert row1[1] != row2[1], "updated_at must change on update"
 
