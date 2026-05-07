@@ -1,5 +1,43 @@
 # Anvil PHOTON Integration Notes
 
+## Shared JSON Fixtures
+
+Both Anvil and photon-action-memory must be able to parse every file under
+`tests/fixtures/shared/`. This directory is the single source of truth for
+cross-repo schema compatibility. When the shared schema drifts, the parse
+tests on both sides fail — that is the intended signal.
+
+### Canonical shared fixtures
+
+| File | Schema type | Purpose |
+|---|---|---|
+| `evaluate_shadow_not_injected.json` | `EvaluateRequest` | Canonical shadow-mode evaluate log; `adoption_status=shadow_not_injected`. |
+| `context_pack_request_with_raw_log.json` | `ContextPackRequest` | Unsafe raw stdout/stderr evidence; must not appear in `ContextPack.items`. |
+
+### How to update a shared fixture
+
+1. Edit the file under `tests/fixtures/shared/` in the photon-action-memory repo.
+2. Run the photon-action-memory shared fixture tests to confirm they pass:
+   ```
+   pytest tests/test_shared_fixtures.py tests/test_schema_v2.py -k shared -v
+   ```
+3. Copy the updated file to the Anvil repo at the same relative path:
+   ```
+   tests/fixtures/shared/<filename>.json
+   ```
+4. Run the Anvil-side shared fixture tests to confirm they pass.
+5. Commit both repos in the same PR pair, referencing the fixture file name in the commit message.
+
+### Adding a new shared fixture
+
+1. Create the file under `tests/fixtures/shared/` with `schema_version: "action-memory.v0.2"`.
+2. Add a round-trip parse test in `tests/test_shared_fixtures.py` and a round-trip test in
+   `tests/test_schema_v2.py` (under the Issue #71 section).
+3. Copy the file to the Anvil repo and add the corresponding parse test there.
+4. Update this table in `workspace/anvil/summary.md`.
+
+
+
 This file collects the Anvil-facing notes added by the Anvil integration
 issues. It includes both the evidence expansion contract from Issue #66 and
 the summary store design note from Issue #68.

@@ -1,0 +1,27 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "shared-pack-raw-001",
+  "agent": {"name": "anvil", "version": "1.0.0"},
+  "repo": {"root": "/workspace/test-repo", "name": "test-repo"},
+  "task": {
+    "user_request": "fix build failure",
+    "mode": "act",
+    "summary": "fixing type mismatch at src/main.rs:42"
+  },
+  "working_memory": {"touched_files": ["src/main.rs"]},
+  "recent_event_ids": [],
+  "candidate_summary_ids": [],
+  "budget": {"max_memory_tokens": 800, "max_evidence_chars": 1200},
+  "raw_evidence": [
+    {
+      "item_id": "shared-stdout-001",
+      "kind": "stdout",
+      "content": "error[E0308]: mismatched types\n --> src/main.rs:42:10\n  = expected `u32`, found `i32`"
+    },
+    {
+      "item_id": "shared-stderr-001",
+      "kind": "stderr",
+      "content": "warning: unused import `std::io`"
+    }
+  ]
+}
