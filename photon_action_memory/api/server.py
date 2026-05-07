@@ -209,6 +209,15 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
         try:
             if request.context_pack_event is not None:
                 evt = request.context_pack_event
+                if not evt.context_pack_request_id:
+                    route_warnings.append(
+                        ContextPackWarning(
+                            kind="malformed_eval_input",
+                            message="context_pack_request_id is empty",
+                        )
+                    )
+                # Payload is built from named fields only; raw stdout/stderr from
+                # model_extra are intentionally excluded to prevent raw output storage.
                 payload: dict[str, Any] = {
                     "event_type": "context_pack_eval",
                     "session_id": request.session_id or request.request_id,

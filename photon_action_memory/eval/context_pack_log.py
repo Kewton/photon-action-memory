@@ -40,6 +40,10 @@ class ContextPackAdoptionReport(BaseModel):
     adopted_count: int
     ignored_count: int
     partial_count: int
+    # Anvil canary/shadow statuses (Anvil Issue #558)
+    shadow_not_injected_count: int = 0
+    not_available_count: int = 0
+    error_count: int = 0
     adoption_rate: float
     evidence_expand_rate: float
     task_success_rate: float
@@ -60,6 +64,9 @@ def aggregate_context_pack_eval(
     adopted = sum(1 for r in parsed if r.adoption_status == "adopted")
     ignored = sum(1 for r in parsed if r.adoption_status == "ignored")
     partial = sum(1 for r in parsed if r.adoption_status == "partial")
+    shadow_not_injected = sum(1 for r in parsed if r.adoption_status == "shadow_not_injected")
+    not_available = sum(1 for r in parsed if r.adoption_status == "not_available")
+    error = sum(1 for r in parsed if r.adoption_status == "error")
     expand_used = sum(1 for r in parsed if r.evidence_expand_requested)
     successes = sum(1 for r in parsed if r.outcome in _SUCCESS_OUTCOMES)
 
@@ -78,6 +85,9 @@ def aggregate_context_pack_eval(
         adopted_count=adopted,
         ignored_count=ignored,
         partial_count=partial,
+        shadow_not_injected_count=shadow_not_injected,
+        not_available_count=not_available,
+        error_count=error,
         adoption_rate=_rate(adopted + partial, n),
         evidence_expand_rate=_rate(expand_used, n),
         task_success_rate=_rate(successes, n),

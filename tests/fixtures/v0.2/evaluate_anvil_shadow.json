@@ -1,0 +1,21 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "anvil-eval-shadow-001",
+  "session_id": "anvil-sess-shadow-20260507",
+  "agent": {
+    "name": "anvil",
+    "version": "1.0.0"
+  },
+  "context_pack_event": {
+    "context_pack_request_id": "pack-anvil-shadow-001",
+    "adoption_status": "shadow_not_injected",
+    "ignored_reason": "shadow_mode_no_injection",
+    "evidence_expand_requested": false,
+    "evidence_ids_expanded": [],
+    "items_adopted_count": 0,
+    "items_ignored_count": 0,
+    "outcome": null,
+    "outcome_detail": "Anvil shadow mode: context pack was built but not injected into the prompt.",
+    "latency_ms": 45.3
+  }
+}
