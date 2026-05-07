@@ -388,3 +388,122 @@ def test_contract_steps_have_endpoints() -> None:
     for step in CONTEXT_PACK_CONTRACT.steps:
         assert step.endpoint.startswith("POST /v1/")
         assert len(step.when) > 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #67: Anvil /v1/evaluate — shadow/canary adoption_status support
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_request_validates_shadow_not_injected() -> None:
+    raw = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "anvil-shadow-req-001",
+        "context_pack_event": {
+            "context_pack_request_id": "pack-shadow-001",
+            "adoption_status": "shadow_not_injected",
+            "ignored_reason": "shadow_mode_no_injection",
+            "items_adopted_count": 0,
+            "items_ignored_count": 0,
+        },
+    }
+    req = EvaluateRequest.model_validate(raw)
+    assert req.context_pack_event is not None
+    assert req.context_pack_event.adoption_status == "shadow_not_injected"
+
+
+def test_evaluate_request_validates_not_available() -> None:
+    raw = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "anvil-shadow-req-002",
+        "context_pack_event": {
+            "context_pack_request_id": "pack-shadow-002",
+            "adoption_status": "not_available",
+            "ignored_reason": "sidecar_timeout",
+            "items_adopted_count": 0,
+            "items_ignored_count": 0,
+        },
+    }
+    req = EvaluateRequest.model_validate(raw)
+    assert req.context_pack_event is not None
+    assert req.context_pack_event.adoption_status == "not_available"
+
+
+def test_evaluate_request_validates_error_status() -> None:
+    raw = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "anvil-shadow-req-003",
+        "context_pack_event": {
+            "context_pack_request_id": "pack-shadow-003",
+            "adoption_status": "error",
+            "ignored_reason": "sidecar_error",
+            "items_adopted_count": 0,
+            "items_ignored_count": 0,
+        },
+    }
+    req = EvaluateRequest.model_validate(raw)
+    assert req.context_pack_event is not None
+    assert req.context_pack_event.adoption_status == "error"
+
+
+def test_anvil_shadow_fixture_returns_logged_one(tmp_path: Path) -> None:
+    client, _ = _make_client(tmp_path)
+    raw = json.loads((FIXTURES_V2 / "evaluate_anvil_shadow.json").read_text())
+    response = client.post("/v1/evaluate", json=raw)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["logged"] == 1
+    assert data["status"] == "ok"
+
+
+def test_evaluate_payload_excludes_raw_stdout_stderr(tmp_path: Path) -> None:
+    client, store = _make_client(tmp_path)
+    body = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "eval-raw-out-001",
+        "context_pack_event": {
+            "context_pack_request_id": "pack-raw-001",
+            "adoption_status": "adopted",
+            "items_adopted_count": 1,
+            "items_ignored_count": 0,
+            "outcome": "success",
+            "raw_stdout": "lots of tool output...",
+            "raw_stderr": "build warnings...",
+        },
+    }
+    response = client.post("/v1/evaluate", json=body)
+    assert response.status_code == 200
+    assert response.json()["logged"] == 1
+    stored = store.list_events()[0]
+    assert "raw_stdout" not in stored.payload
+    assert "raw_stderr" not in stored.payload
+
+
+def test_aggregate_counts_shadow_not_injected_not_available_error() -> None:
+    raw = json.loads((FIXTURES_V2 / "context_pack_adoption_log_anvil.json").read_text())
+    report = aggregate_context_pack_eval(raw["records"])
+    assert report.total_turns == 5
+    assert report.adopted_count == 2
+    assert report.shadow_not_injected_count == 1
+    assert report.not_available_count == 1
+    assert report.error_count == 1
+
+
+def test_evaluate_malformed_empty_request_id_returns_degraded(tmp_path: Path) -> None:
+    client, store = _make_client(tmp_path)
+    body = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "eval-malformed-001",
+        "context_pack_event": {
+            "context_pack_request_id": "",
+            "adoption_status": "adopted",
+            "items_adopted_count": 1,
+            "items_ignored_count": 0,
+        },
+    }
+    response = client.post("/v1/evaluate", json=body)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["logged"] == 1
+    assert data["status"] == "degraded"
+    assert any(w["kind"] == "malformed_eval_input" for w in data["warnings"])

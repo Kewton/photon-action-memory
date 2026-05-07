@@ -26,7 +26,11 @@ from photon_action_memory.api.schema_v2 import (
     EvidenceExpandRequest,
 )
 from photon_action_memory.api.server import create_app
-from photon_action_memory.memory.evidence import EvidenceExpander
+from photon_action_memory.memory.evidence import (
+    REASON_NOT_IN_SELECTION,
+    REASON_RAW_OUTPUT_DENIED_ANVIL,
+    EvidenceExpander,
+)
 from photon_action_memory.memory.store import SQLiteEventStore
 
 # ---------------------------------------------------------------------------
@@ -448,3 +452,150 @@ def test_api_expand_schema_version_in_response(tmp_path: Path) -> None:
         resp = client.post("/v1/evidence/expand", json=_api_body([]))
     assert resp.status_code == 200
     assert resp.json()["schema_version"] == DEFAULT_SCHEMA_VERSION_V2
+
+
+# ---------------------------------------------------------------------------
+# Anvil profile — selected_evidence_ids allowlist
+# ---------------------------------------------------------------------------
+
+
+def test_selected_ids_allows_listed_id() -> None:
+    expander = EvidenceExpander(records=[_rec("ev-sel", snippet="code")])
+    req = EvidenceExpandRequest(
+        schema_version=DEFAULT_SCHEMA_VERSION_V2,
+        request_id="req-sel",
+        evidence_ids=["ev-sel"],
+        selected_evidence_ids=["ev-sel"],
+    )
+    resp = expander.expand(req)
+    assert len(resp.expanded) == 1
+    assert resp.omitted == []
+
+
+def test_selected_ids_omits_unlisted_id() -> None:
+    expander = EvidenceExpander(records=[_rec("ev-other", snippet="code")])
+    req = EvidenceExpandRequest(
+        schema_version=DEFAULT_SCHEMA_VERSION_V2,
+        request_id="req-sel",
+        evidence_ids=["ev-other"],
+        selected_evidence_ids=["ev-allowed"],
+    )
+    resp = expander.expand(req)
+    assert resp.expanded == []
+    assert len(resp.omitted) == 1
+    assert resp.omitted[0].reason == REASON_NOT_IN_SELECTION
+
+
+def test_selected_ids_none_allows_all() -> None:
+    expander = EvidenceExpander(records=[_rec("ev-a", snippet="a"), _rec("ev-b", snippet="b")])
+    req = EvidenceExpandRequest(
+        schema_version=DEFAULT_SCHEMA_VERSION_V2,
+        request_id="req-any",
+        evidence_ids=["ev-a", "ev-b"],
+        selected_evidence_ids=None,
+    )
+    resp = expander.expand(req)
+    assert len(resp.expanded) == 2
+    assert resp.omitted == []
+
+
+def test_selected_ids_partial_filtering() -> None:
+    expander = EvidenceExpander(
+        records=[_rec("ev-in", snippet="yes"), _rec("ev-out", snippet="no")]
+    )
+    req = EvidenceExpandRequest(
+        schema_version=DEFAULT_SCHEMA_VERSION_V2,
+        request_id="req-partial",
+        evidence_ids=["ev-in", "ev-out"],
+        selected_evidence_ids=["ev-in"],
+    )
+    resp = expander.expand(req)
+    assert len(resp.expanded) == 1
+    assert resp.expanded[0].evidence_id == "ev-in"
+    assert len(resp.omitted) == 1
+    assert resp.omitted[0].evidence_id == "ev-out"
+    assert resp.omitted[0].reason == REASON_NOT_IN_SELECTION
+
+
+# ---------------------------------------------------------------------------
+# Anvil profile — raw output always denied
+# ---------------------------------------------------------------------------
+
+
+def test_anvil_profile_denies_raw_even_when_allow_raw_full_output_true() -> None:
+    expander = EvidenceExpander(records=[_rec("ev-raw-anvil", kind="stdout", stdout="build log")])
+    policy = EvidenceExpandPolicy(allow_raw_full_output=True, anvil_profile=True)
+    req = _req(["ev-raw-anvil"], policy=policy)
+    resp = expander.expand(req)
+    assert resp.expanded == []
+    assert len(resp.omitted) == 1
+    assert resp.omitted[0].reason == REASON_RAW_OUTPUT_DENIED_ANVIL
+
+
+def test_anvil_profile_denies_stderr_even_when_allow_raw_full_output_true() -> None:
+    expander = EvidenceExpander(records=[_rec("ev-err-anvil", kind="stderr", stderr="error trace")])
+    policy = EvidenceExpandPolicy(allow_raw_full_output=True, anvil_profile=True)
+    resp = expander.expand(_req(["ev-err-anvil"], policy=policy))
+    assert resp.expanded == []
+    assert resp.omitted[0].reason == REASON_RAW_OUTPUT_DENIED_ANVIL
+
+
+def test_anvil_profile_allows_concise_snippet() -> None:
+    expander = EvidenceExpander(
+        records=[_rec("ev-snip-anvil", kind="file_inspection", snippet="def foo(): pass")]
+    )
+    policy = EvidenceExpandPolicy(anvil_profile=True)
+    resp = expander.expand(_req(["ev-snip-anvil"], policy=policy))
+    assert len(resp.expanded) == 1
+    assert resp.expanded[0].snippet == "def foo(): pass"
+
+
+# ---------------------------------------------------------------------------
+# Stable reason strings — API round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_api_stable_reason_not_found(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    with TestClient(app) as client:
+        resp = client.post("/v1/evidence/expand", json=_api_body(["missing-id"]))
+    assert resp.status_code == 200
+    assert resp.json()["omitted"][0]["reason"] == "evidence_id not found"
+
+
+def test_api_stable_reason_raw_denied(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    records = [{"evidence_id": "ev-raw-st", "kind": "stdout", "summary": "s", "stdout": "log"}]
+    with TestClient(app) as client:
+        resp = client.post(
+            "/v1/evidence/expand", json=_api_body(["ev-raw-st"], extra_records=records)
+        )
+    assert resp.status_code == 200
+    assert resp.json()["omitted"][0]["reason"] == "raw output denied by policy"
+
+
+def test_api_stable_reason_anvil_raw_denied(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    records = [{"evidence_id": "ev-anvil-raw", "kind": "stdout", "summary": "s", "stdout": "log"}]
+    body = _api_body(
+        ["ev-anvil-raw"],
+        extra_records=records,
+        policy={"allow_raw_full_output": True, "redact_again": True, "anvil_profile": True},
+    )
+    with TestClient(app) as client:
+        resp = client.post("/v1/evidence/expand", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["omitted"][0]["reason"] == "raw output denied: anvil profile"
+
+
+def test_api_stable_reason_not_in_selection(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    records = [
+        {"evidence_id": "ev-blocked", "kind": "file_inspection", "summary": "s", "snippet": "x"}
+    ]
+    body = _api_body(["ev-blocked"], extra_records=records)
+    body["selected_evidence_ids"] = ["ev-allowed-only"]
+    with TestClient(app) as client:
+        resp = client.post("/v1/evidence/expand", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["omitted"][0]["reason"] == "evidence_id not in selected_evidence_ids"

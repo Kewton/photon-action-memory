@@ -371,6 +371,7 @@ class EvidenceExpandPolicy(SidecarModel):
     redact_again: bool = True
     allow_raw_full_output: bool = False
     allow_selected_snippet: bool = True
+    anvil_profile: bool = False
 
 
 class EvidenceExpandRequest(SidecarModel):
@@ -379,6 +380,7 @@ class EvidenceExpandRequest(SidecarModel):
     schema_version: SchemaVersionV2
     request_id: str
     evidence_ids: list[str]
+    selected_evidence_ids: list[str] | None = None
     reason: str | None = None
     budget: EvidenceExpandBudget = Field(default_factory=EvidenceExpandBudget)
     policy: EvidenceExpandPolicy = Field(default_factory=EvidenceExpandPolicy)
@@ -438,7 +440,15 @@ class SummaryValidateResponse(SidecarModel):
 # POST /v1/evaluate — ContextPack adoption and outcome logging
 # ---------------------------------------------------------------------------
 
-ContextPackAdoptionStatus = Literal["adopted", "ignored", "partial"]
+ContextPackAdoptionStatus = Literal[
+    "adopted",
+    "ignored",
+    "partial",
+    # Anvil canary/shadow statuses (Anvil Issue #558)
+    "shadow_not_injected",  # shadow mode ran; context pack was not injected
+    "not_available",  # sidecar was unreachable or timed out
+    "error",  # sidecar returned an error response
+]
 
 
 class ContextPackEvalEvent(SidecarModel):
