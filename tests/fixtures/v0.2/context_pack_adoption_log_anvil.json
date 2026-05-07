@@ -1,0 +1,61 @@
+{
+  "schema": "context-pack-eval.v1",
+  "description": "Anvil canary/shadow adoption log fixture with shadow_not_injected, not_available, and error statuses.",
+  "records": [
+    {
+      "context_pack_request_id": "pack-anvil-001",
+      "adoption_status": "adopted",
+      "ignored_reason": null,
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 2,
+      "items_ignored_count": 0,
+      "outcome": "success",
+      "latency_ms": 142.0
+    },
+    {
+      "context_pack_request_id": "pack-anvil-002",
+      "adoption_status": "shadow_not_injected",
+      "ignored_reason": "shadow_mode_no_injection",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": null,
+      "latency_ms": 45.3
+    },
+    {
+      "context_pack_request_id": "pack-anvil-003",
+      "adoption_status": "not_available",
+      "ignored_reason": "sidecar_timeout",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": "partial",
+      "latency_ms": 5000.0
+    },
+    {
+      "context_pack_request_id": "pack-anvil-004",
+      "adoption_status": "error",
+      "ignored_reason": "sidecar_error",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": "failure",
+      "latency_ms": 12.0
+    },
+    {
+      "context_pack_request_id": "pack-anvil-005",
+      "adoption_status": "adopted",
+      "ignored_reason": null,
+      "evidence_expand_requested": true,
+      "evidence_ids_expanded": ["ev-anvil-001"],
+      "items_adopted_count": 3,
+      "items_ignored_count": 1,
+      "outcome": "success",
+      "latency_ms": 210.5
+    }
+  ]
+}
