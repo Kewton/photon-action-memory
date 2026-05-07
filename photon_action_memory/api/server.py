@@ -37,14 +37,34 @@ from photon_action_memory.api.schema_v2 import (
     SummaryValidateResponse,
     TokenBudget,
 )
+from photon_action_memory.api.schema import SidecarModel
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.raw_policy import RawEvidenceItem
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 from photon_action_memory.memory.evidence import EvidenceExpander
+from photon_action_memory.memory.retrieval import SummaryRetriever
 from photon_action_memory.memory.store import SQLiteEventStore
+from photon_action_memory.memory.summary_store import SummaryStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
 from photon_action_memory.ranking.guards import fallback_warnings
+
+
+class SummaryUpsertRequest(SidecarModel):
+    """Request body for POST /v1/summary/upsert."""
+
+    schema_version: str
+    request_id: str
+    summary: ActionSummary
+
+
+class SummaryUpsertResponse(SidecarModel):
+    """Response body for POST /v1/summary/upsert."""
+
+    schema_version: str
+    request_id: str
+    summary_id: str
+    status: str
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +81,22 @@ def default_store_path() -> Path:
     return Path(tempfile.gettempdir()) / "photon-action-memory" / "events.sqlite"
 
 
-def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
+def default_summary_store_path() -> Path:
+    configured = os.environ.get("PHOTON_ACTION_MEMORY_SUMMARY_DB")
+    if configured:
+        return Path(configured)
+    return Path(tempfile.gettempdir()) / "photon-action-memory" / "summaries.sqlite"
+
+
+def create_app(
+    store: SQLiteEventStore | None = None,
+    summary_store: SummaryStore | None = None,
+) -> FastAPI:
     event_store = store or SQLiteEventStore(default_store_path())
+    _summary_store = summary_store or SummaryStore(default_summary_store_path())
     app = FastAPI(title="PHOTON Action Memory", version=__version__)
     app.state.event_store = event_store
+    app.state.summary_store = _summary_store
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -85,26 +117,33 @@ def create_app(store: SQLiteEventStore | None = None) -> FastAPI:
     def suggest(request: SuggestRequest) -> SuggestResponse:
         return build_fallback_suggestions(request)
 
+    @app.post("/v1/summary/upsert", response_model=SummaryUpsertResponse)
+    def upsert_summary(request: SummaryUpsertRequest) -> SummaryUpsertResponse:
+        try:
+            _summary_store.upsert(request.summary)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return SummaryUpsertResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            summary_id=request.summary.summary_id,
+            status="stored",
+        )
+
     @app.post("/v1/context/pack", response_model=ContextPackResponse)
     def context_pack(request: ContextPackRequest) -> ContextPackResponse:
         try:
             route_warnings: list[ContextPackWarning] = []
+            retriever = SummaryRetriever(_summary_store)
+            resolved: list[ActionSummary] = []
             if request.candidate_summary_ids:
-                route_warnings.append(
-                    ContextPackWarning(
-                        kind="summary_store_unavailable",
-                        message=(
-                            f"{len(request.candidate_summary_ids)} candidate summary ID(s) "
-                            "could not be resolved (no summary store)"
-                        ),
-                    )
-                )
+                resolved = retriever.resolve_candidates(request.candidate_summary_ids)
             raw_items = _extract_raw_items(request)
             pack, decisions = build_context_pack(
                 request_id=request.request_id,
                 session_id=None,
                 repo_id=request.repo.name,
-                summaries=[],
+                summaries=resolved,
                 budget=request.budget,
                 warnings=route_warnings,
                 raw_items=raw_items,
