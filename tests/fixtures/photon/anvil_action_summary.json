@@ -1,0 +1,43 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-sum-photon-001",
+  "session_id": "anvil-sess-photon-001",
+  "repo_id": "my-repo",
+  "task_signature": "fix-build-failure-type-mismatch",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-chunk-001"],
+  "facts": [
+    {
+      "text": "Build fails at src/main.rs:42 due to type mismatch (expected u32, found i32).",
+      "evidence_ids": ["anvil-ev-001"],
+      "confidence": 0.95
+    },
+    {
+      "text": "The fix is to cast the value to u32 on line 42.",
+      "evidence_ids": ["anvil-ev-002"],
+      "confidence": 0.88
+    }
+  ],
+  "hypotheses": [
+    {
+      "text": "There may be additional type mismatches in related files.",
+      "evidence_ids": ["anvil-ev-001"],
+      "confidence": 0.4,
+      "status": "open"
+    }
+  ],
+  "failed_attempts": [],
+  "avoid": [
+    {
+      "action": "rerun cargo build without code changes",
+      "reason": "same type mismatch error will occur",
+      "evidence_ids": ["anvil-ev-001"]
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 120,
+    "estimated_raw_tokens": 2800,
+    "tokens_saved_vs_raw": 2680
+  }
+}
