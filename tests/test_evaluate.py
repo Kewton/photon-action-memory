@@ -480,9 +480,7 @@ def test_evaluate_payload_excludes_raw_stdout_stderr(tmp_path: Path) -> None:
 
 
 def test_aggregate_counts_shadow_not_injected_not_available_error() -> None:
-    raw = json.loads(
-        (FIXTURES_V2 / "context_pack_adoption_log_anvil.json").read_text()
-    )
+    raw = json.loads((FIXTURES_V2 / "context_pack_adoption_log_anvil.json").read_text())
     report = aggregate_context_pack_eval(raw["records"])
     assert report.total_turns == 5
     assert report.adopted_count == 2

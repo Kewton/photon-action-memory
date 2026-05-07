@@ -444,8 +444,8 @@ ContextPackAdoptionStatus = Literal[
     "partial",
     # Anvil canary/shadow statuses (Anvil Issue #558)
     "shadow_not_injected",  # shadow mode ran; context pack was not injected
-    "not_available",        # sidecar was unreachable or timed out
-    "error",                # sidecar returned an error response
+    "not_available",  # sidecar was unreachable or timed out
+    "error",  # sidecar returned an error response
 ]
 
 
