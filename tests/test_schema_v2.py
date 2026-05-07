@@ -15,6 +15,7 @@ from photon_action_memory.api.schema_v2 import (
     ContextPack,
     ContextPackRequest,
     ContextPackResponse,
+    EvaluateRequest,
     EvidenceExpandRequest,
     EvidenceExpandResponse,
     EvidenceRef,
@@ -25,6 +26,7 @@ from photon_action_memory.api.schema_v2 import (
 
 SCHEMA_V2 = DEFAULT_SCHEMA_VERSION_V2
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "v0.2"
+SHARED_FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "shared"
 
 
 # ---------------------------------------------------------------------------
@@ -943,3 +945,34 @@ def test_context_pack_fixture_omits_raw_tool_output() -> None:
     assert "raw_tool_output" in omitted_kinds
     assert pack.token_budget.tokens_saved_vs_raw is not None
     assert pack.token_budget.tokens_saved_vs_raw > 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #71: shared fixture round-trip validation (schema drift detection)
+# ---------------------------------------------------------------------------
+
+
+def test_shared_evaluate_shadow_not_injected_round_trip() -> None:
+    raw = (SHARED_FIXTURE_ROOT / "evaluate_shadow_not_injected.json").read_text()
+    req = EvaluateRequest.model_validate_json(raw)
+    rt = EvaluateRequest.model_validate_json(req.model_dump_json())
+
+    assert rt.schema_version == SCHEMA_V2
+    assert rt.agent is not None
+    assert rt.agent.name == "anvil"
+    assert rt.context_pack_event is not None
+    assert rt.context_pack_event.adoption_status == "shadow_not_injected"
+    assert rt.context_pack_event.ignored_reason == "shadow_mode_no_injection"
+    assert rt.context_pack_event.items_adopted_count == 0
+    assert rt.context_pack_event.latency_ms == pytest.approx(42.0)
+
+
+def test_shared_context_pack_request_with_raw_log_round_trip() -> None:
+    raw = (SHARED_FIXTURE_ROOT / "context_pack_request_with_raw_log.json").read_text()
+    req = ContextPackRequest.model_validate_json(raw)
+    rt = ContextPackRequest.model_validate_json(req.model_dump_json())
+
+    assert rt.schema_version == SCHEMA_V2
+    assert rt.request_id == "shared-pack-raw-001"
+    assert rt.agent is not None
+    assert rt.agent.name == "anvil"
