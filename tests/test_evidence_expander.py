@@ -487,9 +487,7 @@ def test_selected_ids_omits_unlisted_id() -> None:
 
 
 def test_selected_ids_none_allows_all() -> None:
-    expander = EvidenceExpander(
-        records=[_rec("ev-a", snippet="a"), _rec("ev-b", snippet="b")]
-    )
+    expander = EvidenceExpander(records=[_rec("ev-a", snippet="a"), _rec("ev-b", snippet="b")])
     req = EvidenceExpandRequest(
         schema_version=DEFAULT_SCHEMA_VERSION_V2,
         request_id="req-any",
@@ -525,9 +523,7 @@ def test_selected_ids_partial_filtering() -> None:
 
 
 def test_anvil_profile_denies_raw_even_when_allow_raw_full_output_true() -> None:
-    expander = EvidenceExpander(
-        records=[_rec("ev-raw-anvil", kind="stdout", stdout="build log")]
-    )
+    expander = EvidenceExpander(records=[_rec("ev-raw-anvil", kind="stdout", stdout="build log")])
     policy = EvidenceExpandPolicy(allow_raw_full_output=True, anvil_profile=True)
     req = _req(["ev-raw-anvil"], policy=policy)
     resp = expander.expand(req)
@@ -537,9 +533,7 @@ def test_anvil_profile_denies_raw_even_when_allow_raw_full_output_true() -> None
 
 
 def test_anvil_profile_denies_stderr_even_when_allow_raw_full_output_true() -> None:
-    expander = EvidenceExpander(
-        records=[_rec("ev-err-anvil", kind="stderr", stderr="error trace")]
-    )
+    expander = EvidenceExpander(records=[_rec("ev-err-anvil", kind="stderr", stderr="error trace")])
     policy = EvidenceExpandPolicy(allow_raw_full_output=True, anvil_profile=True)
     resp = expander.expand(_req(["ev-err-anvil"], policy=policy))
     assert resp.expanded == []
@@ -596,7 +590,9 @@ def test_api_stable_reason_anvil_raw_denied(tmp_path: Path) -> None:
 
 def test_api_stable_reason_not_in_selection(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
-    records = [{"evidence_id": "ev-blocked", "kind": "file_inspection", "summary": "s", "snippet": "x"}]
+    records = [
+        {"evidence_id": "ev-blocked", "kind": "file_inspection", "summary": "s", "snippet": "x"}
+    ]
     body = _api_body(["ev-blocked"], extra_records=records)
     body["selected_evidence_ids"] = ["ev-allowed-only"]
     with TestClient(app) as client:

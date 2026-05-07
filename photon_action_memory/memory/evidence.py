@@ -173,9 +173,7 @@ class EvidenceExpander:
 
             candidate = self._index.get(evidence_id)
             if candidate is None:
-                omitted.append(
-                    OmittedEvidence(evidence_id=evidence_id, reason=REASON_NOT_FOUND)
-                )
+                omitted.append(OmittedEvidence(evidence_id=evidence_id, reason=REASON_NOT_FOUND))
                 continue
 
             if candidate.concise_text is not None:
