@@ -18,6 +18,7 @@ from photon_action_memory.api.schema import (
     EventResponse,
     EvidenceItem,
     HealthResponse,
+    SidecarModel,
     SuggestRequest,
     SuggestResponse,
 )
@@ -37,7 +38,6 @@ from photon_action_memory.api.schema_v2 import (
     SummaryValidateResponse,
     TokenBudget,
 )
-from photon_action_memory.api.schema import SidecarModel
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.raw_policy import RawEvidenceItem
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker

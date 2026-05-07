@@ -16,7 +16,6 @@ from photon_action_memory.memory.retrieval import SummaryRetriever
 from photon_action_memory.memory.staleness import StalenessContext
 from photon_action_memory.memory.summary_store import SummaryStore
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
