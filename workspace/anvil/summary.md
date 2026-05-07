@@ -184,3 +184,26 @@ Key modules:
 - `photon_action_memory/eval/metrics.py` — `RolloutMetrics`, `build_rollout_metrics()`
 - `tests/fixtures/v0.2/rollout_metrics_fixture.json` — four named gate scenarios
 - `tests/test_rollout_policy.py` — 14 tests covering all gates and rollback conditions
+
+## Operations Documentation (Issue #73)
+
+Primary docs:
+
+- `docs/photon-action-memory.md` — photon-side sidecar startup and API smoke
+  checks.
+- `docs/anvil-integration.md` — Anvil env/defaults, shadow/canary/rollback
+  checklists, fixture updates, and troubleshooting ownership.
+
+Operational defaults stay aligned with the Anvil docs:
+
+| Variable | Default |
+|---|---|
+| `ANVIL_PHOTON_ENABLED` | `true` |
+| `ANVIL_PHOTON_URL` | `http://127.0.0.1:18765` |
+| `ANVIL_PHOTON_SHADOW_MODE` | `true` |
+| `ANVIL_PHOTON_CANARY` | `false` |
+| `ANVIL_PHOTON_TIMEOUT_MS` | `500` |
+| `ANVIL_PHOTON_MAX_MEMORY_TOKENS` | `1200` |
+| `ANVIL_PHOTON_MAX_EVIDENCE_CHARS` | `4000` |
+
+Port `3000` is intentionally not used for photon-action-memory examples.

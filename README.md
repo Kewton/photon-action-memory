@@ -81,6 +81,12 @@ PHOTON Model
 
 The agent remains responsible for final decisions and tool execution. PHOTON Action Memory provides ranked suggestions and compact memory signals.
 
+Anvil operations docs:
+
+- `docs/photon-action-memory.md`: local sidecar startup and API smoke checks.
+- `docs/anvil-integration.md`: Anvil env/defaults, shadow/canary/rollback
+  checklists, shared fixture updates, and troubleshooting ownership.
+
 ## Inputs
 
 Typical inputs include:
