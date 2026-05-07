@@ -188,13 +188,54 @@ def _decision(
     )
 
 
+class CanaryRolloutPolicy(BaseModel):
+    """Thresholds that gate promotion from shadow mode to canary injection."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    min_turns_for_canary: int = Field(default=10, ge=1)
+    max_fail_open_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+
+
+CANARY_ROLLOUT_POLICY = CanaryRolloutPolicy()
+
+
+def is_canary_eligible(
+    turn_count: int,
+    raw_tool_tokens_in_prompt: int,
+    *,
+    fail_open_incident_rate: float = 0.0,
+    policy: CanaryRolloutPolicy = CANARY_ROLLOUT_POLICY,
+) -> tuple[bool, str]:
+    """Return (eligible, reason) for canary promotion.
+
+    Criteria (all must pass):
+    - turn_count >= policy.min_turns_for_canary
+    - raw_tool_tokens_in_prompt == 0
+    - fail_open_incident_rate <= policy.max_fail_open_rate
+    """
+    if turn_count < policy.min_turns_for_canary:
+        return False, f"turn count {turn_count} < min {policy.min_turns_for_canary}"
+    if raw_tool_tokens_in_prompt > 0:
+        return False, f"raw_tool_tokens_in_prompt={raw_tool_tokens_in_prompt} must be 0"
+    if fail_open_incident_rate > policy.max_fail_open_rate:
+        return (
+            False,
+            f"fail_open_incident_rate={fail_open_incident_rate:.3f} > {policy.max_fail_open_rate}",
+        )
+    return True, "eligible for canary"
+
+
 __all__ = [
     "CANARY_ALLOWED_CLASSES",
     "CANARY_DENIED_CLASSES",
     "CANARY_MODE_CONFIG",
     "CANARY_POLICY_NAME",
+    "CANARY_ROLLOUT_POLICY",
     "CanaryCandidate",
     "CanaryModeConfig",
+    "CanaryRolloutPolicy",
     "evaluate_canary_candidate",
     "evaluate_canary_candidates",
+    "is_canary_eligible",
 ]
