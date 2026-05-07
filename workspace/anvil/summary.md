@@ -162,3 +162,25 @@ search by repo and task.
 |---|---|
 | `PHOTON_ACTION_MEMORY_DB` | `$TMPDIR/photon-action-memory/events.sqlite` |
 | `PHOTON_ACTION_MEMORY_SUMMARY_DB` | `$TMPDIR/photon-action-memory/summaries.sqlite` |
+
+## Rollout Policy (Issue #72)
+
+See `workspace/anvil/rollout_policy.md` for the full shadow → canary promotion
+checklist and rollback conditions.
+
+### Quick reference
+
+Three gates must all pass before canary injection is enabled:
+
+1. `total_turns >= 10` (configurable `min_turns_for_canary`)
+2. `total_raw_tool_tokens_in_prompt == 0` — hard gate, no threshold
+3. `fail_open_incident_rate <= 0.05` (configurable `max_fail_open_rate`)
+
+Rollback is triggered immediately if `raw_tool_tokens_in_prompt > 0` or
+`fail_open_incident_rate > max_fail_open_rate`.
+
+Key modules:
+- `photon_action_memory/context/canary.py` — `CanaryRolloutPolicy`, `is_canary_eligible()`
+- `photon_action_memory/eval/metrics.py` — `RolloutMetrics`, `build_rollout_metrics()`
+- `tests/fixtures/v0.2/rollout_metrics_fixture.json` — four named gate scenarios
+- `tests/test_rollout_policy.py` — 14 tests covering all gates and rollback conditions

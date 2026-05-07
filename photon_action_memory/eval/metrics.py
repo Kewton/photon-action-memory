@@ -8,7 +8,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from photon_action_memory.context.canary import (
+    CanaryRolloutPolicy,
+    is_canary_eligible,
+)
+from photon_action_memory.eval.context_pack_log import (
+    RawContextPackEvalRecord,
+    aggregate_context_pack_eval,
+)
+
 REPORT_SCHEMA_VERSION = "eval-metrics.v1"
+ROLLOUT_METRICS_SCHEMA = "rollout-metrics.v1"
 
 
 class EvalModel(BaseModel):
@@ -224,12 +234,86 @@ def _count_values(values: Iterable[str]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+class RolloutMetrics(BaseModel):
+    """Gate metrics for shadow → canary promotion.
+
+    Computed from a batch of Anvil evaluate records plus the aggregate
+    raw-tool-token count from the corresponding pollution report.
+    """
+
+    schema_version: Literal["rollout-metrics.v1"] = "rollout-metrics.v1"
+    total_turns: int
+    raw_tool_tokens_in_prompt: int
+    adoption_rate: float
+    fail_open_incident_rate: float
+    canary_eligible: bool
+    ineligible_reason: str | None
+    rollback_triggered: bool
+    rollback_reason: str | None
+
+
+def build_rollout_metrics(
+    eval_records: Sequence[RawContextPackEvalRecord],
+    *,
+    raw_tool_tokens_in_prompt: int = 0,
+    min_turns_for_canary: int = 10,
+    max_fail_open_rate: float = 0.05,
+) -> RolloutMetrics:
+    """Compute rollout gate metrics from Anvil evaluate records.
+
+    ``raw_tool_tokens_in_prompt`` should come from the aggregate
+    ``PollutionReport.total_raw_tool_tokens_in_prompt`` for the same batch.
+    """
+    adoption_report = aggregate_context_pack_eval(eval_records)
+
+    fail_open_incident_rate = _rate(
+        adoption_report.error_count + adoption_report.not_available_count,
+        adoption_report.total_turns,
+    )
+
+    rollback_triggered = False
+    rollback_reason: str | None = None
+    if raw_tool_tokens_in_prompt > 0:
+        rollback_triggered = True
+        rollback_reason = f"raw_tool_tokens_in_prompt={raw_tool_tokens_in_prompt} > 0"
+    elif fail_open_incident_rate > max_fail_open_rate:
+        rollback_triggered = True
+        rollback_reason = (
+            f"fail_open_incident_rate={fail_open_incident_rate:.3f} > {max_fail_open_rate}"
+        )
+
+    policy = CanaryRolloutPolicy(
+        min_turns_for_canary=min_turns_for_canary,
+        max_fail_open_rate=max_fail_open_rate,
+    )
+    eligible, eligibility_reason = is_canary_eligible(
+        adoption_report.total_turns,
+        raw_tool_tokens_in_prompt,
+        fail_open_incident_rate=fail_open_incident_rate,
+        policy=policy,
+    )
+
+    return RolloutMetrics(
+        total_turns=adoption_report.total_turns,
+        raw_tool_tokens_in_prompt=raw_tool_tokens_in_prompt,
+        adoption_rate=adoption_report.adoption_rate,
+        fail_open_incident_rate=fail_open_incident_rate,
+        canary_eligible=eligible,
+        ineligible_reason=None if eligible else eligibility_reason,
+        rollback_triggered=rollback_triggered,
+        rollback_reason=rollback_reason,
+    )
+
+
 __all__ = [
     "EvalAction",
     "EvalSuggestion",
     "EvalWarning",
     "MetricsReport",
     "REPORT_SCHEMA_VERSION",
+    "ROLLOUT_METRICS_SCHEMA",
+    "RolloutMetrics",
     "ShadowEvalRecord",
     "build_metrics_report",
+    "build_rollout_metrics",
 ]
