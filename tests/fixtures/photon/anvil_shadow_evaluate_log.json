@@ -1,0 +1,39 @@
+{
+  "schema": "context-pack-eval.v1",
+  "description": "Anvil shadow/canary evaluate log for photon-side aggregation tests.",
+  "records": [
+    {
+      "context_pack_request_id": "pack-photon-shadow-001",
+      "adoption_status": "shadow_not_injected",
+      "ignored_reason": "shadow_mode_no_injection",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": null,
+      "latency_ms": 38.5
+    },
+    {
+      "context_pack_request_id": "pack-photon-shadow-002",
+      "adoption_status": "adopted",
+      "ignored_reason": null,
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 2,
+      "items_ignored_count": 0,
+      "outcome": "success",
+      "latency_ms": 145.0
+    },
+    {
+      "context_pack_request_id": "pack-photon-shadow-003",
+      "adoption_status": "not_available",
+      "ignored_reason": "sidecar_timeout",
+      "evidence_expand_requested": false,
+      "evidence_ids_expanded": [],
+      "items_adopted_count": 0,
+      "items_ignored_count": 0,
+      "outcome": "partial",
+      "latency_ms": 5012.0
+    }
+  ]
+}
