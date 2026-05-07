@@ -24,6 +24,14 @@ _CONCISE_FIELDS: tuple[str, ...] = ("snippet",)
 # Fields that carry raw full output, subject to default-deny.
 _RAW_FIELDS: tuple[str, ...] = ("stdout", "stderr")
 
+# Stable omit reason strings — Anvil renderer can rely on these being constant.
+REASON_NOT_FOUND = "evidence_id not found"
+REASON_NOT_IN_SELECTION = "evidence_id not in selected_evidence_ids"
+REASON_RAW_OUTPUT_DENIED = "raw output denied by policy"
+REASON_RAW_OUTPUT_DENIED_ANVIL = "raw output denied: anvil profile"
+REASON_NO_CONTENT = "no expandable content available"
+REASON_BUDGET_EXHAUSTED = "max_total_chars budget exhausted"
+
 
 @dataclass
 class _Candidate:
@@ -134,6 +142,11 @@ class EvidenceExpander:
         policy = request.policy
         max_per = budget.max_chars_per_evidence
         max_total = budget.max_total_chars
+        selection: frozenset[str] | None = (
+            frozenset(request.selected_evidence_ids)
+            if request.selected_evidence_ids is not None
+            else None
+        )
 
         expanded: list[ExpandedEvidence] = []
         omitted: list[OmittedEvidence] = []
@@ -144,7 +157,16 @@ class EvidenceExpander:
                 omitted.append(
                     OmittedEvidence(
                         evidence_id=evidence_id,
-                        reason="max_total_chars budget exhausted",
+                        reason=REASON_BUDGET_EXHAUSTED,
+                    )
+                )
+                continue
+
+            if selection is not None and evidence_id not in selection:
+                omitted.append(
+                    OmittedEvidence(
+                        evidence_id=evidence_id,
+                        reason=REASON_NOT_IN_SELECTION,
                     )
                 )
                 continue
@@ -152,18 +174,29 @@ class EvidenceExpander:
             candidate = self._index.get(evidence_id)
             if candidate is None:
                 omitted.append(
-                    OmittedEvidence(evidence_id=evidence_id, reason="evidence_id not found")
+                    OmittedEvidence(evidence_id=evidence_id, reason=REASON_NOT_FOUND)
                 )
                 continue
 
             if candidate.concise_text is not None:
                 raw_snippet = candidate.concise_text
             elif candidate.raw_text is not None:
+                if policy.anvil_profile:
+                    omitted.append(
+                        OmittedEvidence(
+                            evidence_id=evidence_id,
+                            reason=REASON_RAW_OUTPUT_DENIED_ANVIL,
+                        )
+                    )
+                    logger.warning(
+                        "evidence %r omitted: raw output denied by anvil profile", evidence_id
+                    )
+                    continue
                 if not policy.allow_raw_full_output:
                     omitted.append(
                         OmittedEvidence(
                             evidence_id=evidence_id,
-                            reason="raw full output denied by policy (allow_raw_full_output=False)",
+                            reason=REASON_RAW_OUTPUT_DENIED,
                         )
                     )
                     logger.warning("evidence %r omitted: raw output denied by policy", evidence_id)
@@ -173,7 +206,7 @@ class EvidenceExpander:
                 omitted.append(
                     OmittedEvidence(
                         evidence_id=evidence_id,
-                        reason="no expandable content available",
+                        reason=REASON_NO_CONTENT,
                     )
                 )
                 continue
@@ -215,4 +248,12 @@ class EvidenceExpander:
         )
 
 
-__all__ = ["EvidenceExpander"]
+__all__ = [
+    "EvidenceExpander",
+    "REASON_BUDGET_EXHAUSTED",
+    "REASON_NOT_FOUND",
+    "REASON_NOT_IN_SELECTION",
+    "REASON_NO_CONTENT",
+    "REASON_RAW_OUTPUT_DENIED",
+    "REASON_RAW_OUTPUT_DENIED_ANVIL",
+]
