@@ -1,0 +1,42 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "anvil-live-pack-001",
+  "model_version": "photon-action-memory-v0.1.0-fallback",
+  "sidecar_status": "ok",
+  "context_pack": {
+    "schema_version": "action-memory.v0.2",
+    "request_id": "anvil-live-pack-001",
+    "session_id": null,
+    "repo_id": "anvil-live-fixture",
+    "mode": "summary_only",
+    "items": [
+      {
+        "kind": "action_summary",
+        "id": "anvil-live-codename-001",
+        "text": "FACT: The project codename for repo anvil-live-fixture is heliograph.\nHINT: answer - Use the stored codename fact when the user asks for the fixture repo codename.",
+        "evidence_ids": ["anvil-live-ev-001"],
+        "admission_reason": "grounded and within budget"
+      }
+    ],
+    "omitted": [],
+    "warnings": [],
+      "token_budget": {
+        "max_tokens": 800,
+      "estimated_tokens": 40,
+      "tokens_saved_vs_raw": 600
+      }
+  },
+  "admission_decisions": [
+    {
+      "schema_version": "action-memory.v0.2",
+      "decision_id": "dec-c4243d786cba",
+      "item_id": "anvil-live-codename-001",
+      "item_kind": "action_summary",
+      "decision": "admit",
+      "reason": null,
+      "risk": null,
+      "estimated_tokens": 40,
+      "policy": null
+    }
+  ]
+}

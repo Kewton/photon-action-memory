@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from photon_action_memory.api.schema_v2 import ActionSummary
+from photon_action_memory.memory.sanitizer import sanitize_text
 
 _CHARS_PER_TOKEN: int = 4
 
@@ -24,7 +25,7 @@ def render_summary(summary: ActionSummary) -> str:
         parts.append(f"AVOID: {av.action} - {av.reason}")
     for nh in summary.next_hints:
         parts.append(f"HINT: {nh.kind} - {nh.reason}")
-    return "\n".join(parts)
+    return sanitize_text("\n".join(parts))
 
 
 __all__ = ["estimate_tokens", "render_summary"]

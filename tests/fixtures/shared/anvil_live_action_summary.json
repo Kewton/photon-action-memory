@@ -1,0 +1,42 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-live-codename-001",
+  "session_id": "anvil-live-session-001",
+  "repo_id": "anvil-live-fixture",
+  "task_signature": "codename-question",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-live-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "inspect",
+      "target": "memory-seed",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-live-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "The project codename for repo anvil-live-fixture is heliograph.",
+      "evidence_ids": ["anvil-live-ev-001"],
+      "confidence": 0.98
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [],
+  "next_hints": [
+    {
+      "kind": "answer",
+      "target": "codename",
+      "reason": "Use the stored codename fact when the user asks for the fixture repo codename.",
+      "confidence": 0.9
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 48,
+    "estimated_raw_tokens": 640,
+    "tokens_saved_vs_raw": 592
+  }
+}

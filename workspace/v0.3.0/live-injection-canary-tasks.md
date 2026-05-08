@@ -153,6 +153,34 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | G5 | canary 100 eval turn 以上、fail-open 率許容内、success-rate regression なし | 未着手 (CY-4/CY-5 が必要) |
 | G6 | rollback 手順が確認済み | 完了 (`ANVIL_PHOTON_CANARY=0` または `ANVIL_PHOTON_ENABLED=false` で即時停止) |
 
+## 対応状況追記
+
+追記日: 2026-05-09
+
+| 領域 | 状態 | 内容 |
+|---|---|---|
+| photon-action-memory PM-1〜PM-6 | 完了 | live injection 用 seed summary、upsert script、repo/task 自動検索、stale/empty 除外、admission/omitted 理由記録を実装・確認済み |
+| photon-action-memory SG-3 | 完了 | `render_summary()` が `sanitize_text()` を通し、`ContextPackItem.text` の token/Bearer/API_KEY/ローカル絶対パスを mask する regression test を追加済み |
+| photon-action-memory fixture / runbook | 完了 | `anvil_live_action_summary.json`、`anvil_live_context_pack_request.json`、`anvil_live_context_pack_response.json`、`seed_live_injection_summary.py`、sidecar runbook を追加済み |
+| Anvil live injection | 完了 | Anvil commit `8fc1b45` で LI-1〜LI-3、AN-1〜AN-7、SG-2〜SG-6 の smoke test 通過済み |
+| 実機 behavior change | 未着手 | BC-3/BC-4/BC-5/BC-6 は、sidecar を最新コードで再起動し seed 投入後に Anvil 実行で確認する |
+| canary 運用 | 未着手 | CY-1〜CY-8 は、live injection 実機確認後に eval turn 蓄積と success-rate 比較を行う |
+
+photon-action-memory 側の検証:
+
+```bash
+PYTHONPATH=. pytest tests/test_context_pack.py tests/test_anvil_context_pack_api.py tests/test_anvil_contract.py
+# 65 passed
+
+ruff check photon_action_memory/context/render.py tests/test_context_pack.py photon_action_memory/api/server.py tests/test_anvil_context_pack_api.py scripts/seed_live_injection_summary.py
+# All checks passed
+```
+
+注意:
+
+- 現在起動中の `127.0.0.1:18765` sidecar がある場合、今回の photon-action-memory 側変更を反映するには再起動が必要。
+- `BC-3/BC-4` の実機確認では、`scripts/seed_live_injection_summary.py --url http://127.0.0.1:18765` で seed 投入してから Anvil を実行する。
+
 ## 範囲外
 
 - canary なしで全 turn に即時 live injection すること。

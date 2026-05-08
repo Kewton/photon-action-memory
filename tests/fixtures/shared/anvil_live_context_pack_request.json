@@ -1,0 +1,19 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "anvil-live-pack-001",
+  "agent": {"name": "anvil", "version": "1.0.0"},
+  "repo": {"root": "/tmp/anvil-live-fixture", "name": "anvil-live-fixture"},
+  "task": {
+    "user_request": "What is the project codename?",
+    "mode": "answer",
+    "summary": "answer codename question",
+    "task_signature": "codename-question"
+  },
+  "working_memory": {
+    "active_task": "answer codename question",
+    "touched_files": []
+  },
+  "recent_event_ids": [],
+  "candidate_summary_ids": [],
+  "budget": {"max_memory_tokens": 800, "max_evidence_chars": 1200}
+}

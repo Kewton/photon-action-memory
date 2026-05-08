@@ -31,6 +31,7 @@ from photon_action_memory.context.admission import ContextAdmissionController
 from photon_action_memory.context.budget import TokenBudgetTracker
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.render import estimate_tokens, render_summary
+from photon_action_memory.memory.sanitizer import REDACTED_SECRET
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.memory.summary_store import SummaryStore
 
@@ -42,6 +43,8 @@ from photon_action_memory.memory.summary_store import SummaryStore
 def _make_summary(
     summary_id: str = "sum-aaa",
     *,
+    repo_id: str | None = None,
+    task_signature: str | None = None,
     facts: list[Fact] | None = None,
     hypotheses: list[Hypothesis] | None = None,
     failed_attempts: list[FailedAttempt] | None = None,
@@ -53,6 +56,8 @@ def _make_summary(
         schema_version=DEFAULT_SCHEMA_VERSION_V2,
         summary_id=summary_id,
         session_id="sess-1",
+        repo_id=repo_id,
+        task_signature=task_signature,
         facts=facts or [],
         hypotheses=hypotheses or [],
         failed_attempts=failed_attempts or [],
@@ -92,6 +97,40 @@ def test_render_summary_includes_facts_and_hypotheses() -> None:
 def test_render_summary_empty_returns_empty_string() -> None:
     summary = _make_summary()
     assert render_summary(summary) == ""
+
+
+def test_render_summary_masks_prompt_visible_secrets_and_paths() -> None:
+    summary = _make_summary(
+        facts=[
+            _fact(
+                "token=sk-secretvalue1234567890 and file "
+                "/Users/example/private/project/config.toml"
+            )
+        ],
+        failed_attempts=[
+            FailedAttempt(
+                action="curl -H 'Authorization: Bearer abcdefghijklmnop1234567890'",
+                outcome="failed",
+                evidence_ids=[],
+            )
+        ],
+        avoid=[
+            AvoidGuidance(
+                action="open /Users/example/private/project/.env",
+                reason="contains API_KEY=abcdefghi123456789",
+                evidence_ids=[],
+            )
+        ],
+    )
+
+    text = render_summary(summary)
+
+    assert REDACTED_SECRET in text
+    assert "sk-secretvalue1234567890" not in text
+    assert "abcdefghijklmnop1234567890" not in text
+    assert "abcdefghi123456789" not in text
+    assert "/Users/example" not in text
+    assert "[ABS_PATH]/config.toml" in text
 
 
 def test_estimate_tokens_minimum_is_one() -> None:
@@ -257,7 +296,7 @@ def test_build_context_pack_returns_admission_decisions() -> None:
 
 
 def test_build_context_pack_enforces_max_memory_tokens() -> None:
-    big_text = "a" * 400  # ~100 tokens
+    big_text = "large safe context phrase " * 20  # ~130 tokens
     summaries = [
         _make_summary("sum-a", facts=[_fact(big_text, "ev-1")]),
         _make_summary("sum-b", facts=[_fact("small fact", "ev-2")]),
@@ -465,6 +504,137 @@ def test_context_pack_api_resolves_stored_summaries(tmp_path: Path) -> None:
     assert len(items) == 1
     assert items[0]["id"] == "sum-stored"
     assert "FACT:" in items[0]["text"]
+
+
+def test_context_pack_api_auto_resolves_repo_summaries_without_candidate_ids(
+    tmp_path: Path,
+) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    summary = _make_summary(
+        "sum-auto-repo",
+        repo_id="photon-test",
+        facts=[_fact("the live injection codename is heliograph")],
+    )
+    ss.upsert(summary)
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=_pack_request())
+
+    assert response.status_code == 200
+    payload = response.json()
+    items = payload["context_pack"]["items"]
+    assert [item["id"] for item in items] == ["sum-auto-repo"]
+    assert "heliograph" in items[0]["text"]
+    assert payload["admission_decisions"][0]["decision"] == "admit"
+
+
+def test_context_pack_api_auto_search_prefers_task_signature(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-repo-only",
+            repo_id="photon-test",
+            facts=[_fact("repo-wide memory")],
+        )
+    )
+    ss.upsert(
+        _make_summary(
+            "sum-task",
+            repo_id="photon-test",
+            task_signature="live-codename-task",
+            facts=[_fact("task-specific memory")],
+        )
+    )
+    body = _pack_request()
+    body["task"]["task_signature"] = "live-codename-task"
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=body)
+
+    assert response.status_code == 200
+    items = response.json()["context_pack"]["items"]
+    assert [item["id"] for item in items] == ["sum-task"]
+    assert "task-specific memory" in items[0]["text"]
+
+
+def test_context_pack_api_auto_resolves_repo_from_root_basename(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-root-name",
+            repo_id="anvil-live-fixture",
+            facts=[_fact("root basename lookup works")],
+        )
+    )
+    body = _pack_request()
+    body["repo"] = {"root": "/tmp/anvil-live-fixture"}
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["context_pack"]["repo_id"] == "anvil-live-fixture"
+    assert payload["context_pack"]["items"][0]["id"] == "sum-root-name"
+
+
+def test_context_pack_api_auto_search_excludes_stale_and_omits_empty(
+    tmp_path: Path,
+) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-valid",
+            repo_id="photon-test",
+            facts=[_fact("valid live memory")],
+        )
+    )
+    ss.upsert(
+        _make_summary(
+            "sum-stale",
+            repo_id="photon-test",
+            facts=[_fact("stale live memory")],
+            validity_status="stale",
+        )
+    )
+    ss.upsert(_make_summary("sum-empty", repo_id="photon-test"))
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=_pack_request())
+
+    assert response.status_code == 200
+    payload = response.json()["context_pack"]
+    item_ids = {item["id"] for item in payload["items"]}
+    omitted_ids = {item["id"] for item in payload["omitted"]}
+    assert item_ids == {"sum-valid"}
+    assert "sum-stale" not in item_ids
+    assert omitted_ids == {"sum-empty"}
+
+
+def test_context_pack_api_masks_prompt_visible_summary_secrets(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-secret",
+            repo_id="photon-test",
+            facts=[
+                _fact(
+                    "Use token=sk-liveinjectionsecret1234567890 from "
+                    "/Users/example/private/project/.env"
+                )
+            ],
+        )
+    )
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=_pack_request())
+
+    assert response.status_code == 200
+    item_text = response.json()["context_pack"]["items"][0]["text"]
+    assert REDACTED_SECRET in item_text
+    assert "sk-liveinjectionsecret1234567890" not in item_text
+    assert "/Users/example" not in item_text
+    assert "[ABS_PATH]/.env" in item_text
 
 
 def test_context_pack_api_excludes_stale_stored_summaries(tmp_path: Path) -> None:

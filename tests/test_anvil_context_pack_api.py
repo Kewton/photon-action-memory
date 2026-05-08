@@ -17,6 +17,8 @@ from photon_action_memory.api.schema_v2 import (
     DEFAULT_SCHEMA_VERSION_V2,
     ActionSummary,
     ContextPack,
+    ContextPackRequest,
+    ContextPackResponse,
 )
 from photon_action_memory.api.server import create_app
 from photon_action_memory.memory.store import SQLiteEventStore
@@ -24,6 +26,7 @@ from photon_action_memory.memory.summary_store import SummaryStore
 
 FIXTURES_V2 = Path(__file__).parent / "fixtures" / "v0.2"
 FIXTURES_PHOTON = Path(__file__).parent / "fixtures" / "photon"
+FIXTURES_SHARED = Path(__file__).parent / "fixtures" / "shared"
 
 
 def _load(directory: Path, name: str) -> object:
@@ -189,3 +192,41 @@ def test_context_pack_omits_raw_fixture_validates() -> None:
     pack = ContextPack.model_validate(raw)
     omitted_kinds = {o.kind for o in pack.omitted}
     assert "raw_tool_output" in omitted_kinds
+
+
+# ---------------------------------------------------------------------------
+# Live injection fixtures — repo/task auto retrieval
+# ---------------------------------------------------------------------------
+
+
+def test_anvil_live_shared_fixtures_validate() -> None:
+    summary = ActionSummary.model_validate(_load(FIXTURES_SHARED, "anvil_live_action_summary.json"))
+    request = ContextPackRequest.model_validate(
+        _load(FIXTURES_SHARED, "anvil_live_context_pack_request.json")
+    )
+    response = ContextPackResponse.model_validate(
+        _load(FIXTURES_SHARED, "anvil_live_context_pack_response.json")
+    )
+    assert summary.repo_id == "anvil-live-fixture"
+    assert summary.task_signature == "codename-question"
+    assert request.candidate_summary_ids == []
+    assert response.context_pack.items[0].kind == "action_summary"
+
+
+def test_anvil_live_context_pack_auto_resolves_seed_summary(tmp_path: Path) -> None:
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    event_store = SQLiteEventStore(tmp_path / "events.sqlite")
+    summary = ActionSummary.model_validate(_load(FIXTURES_SHARED, "anvil_live_action_summary.json"))
+    body = _load(FIXTURES_SHARED, "anvil_live_context_pack_request.json")
+    summary_store.upsert(summary)
+
+    with TestClient(create_app(event_store, summary_store)) as client:
+        resp = client.post("/v1/context/pack", json=body)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["sidecar_status"] == "ok"
+    assert data["context_pack"]["repo_id"] == "anvil-live-fixture"
+    assert data["context_pack"]["items"][0]["id"] == "anvil-live-codename-001"
+    assert "heliograph" in data["context_pack"]["items"][0]["text"]
+    assert data["admission_decisions"][0]["decision"] == "admit"

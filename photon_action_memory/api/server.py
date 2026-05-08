@@ -136,14 +136,13 @@ def create_app(
         try:
             route_warnings: list[ContextPackWarning] = []
             retriever = SummaryRetriever(_summary_store)
-            resolved: list[ActionSummary] = []
-            if request.candidate_summary_ids:
-                resolved = retriever.resolve_candidates(request.candidate_summary_ids)
+            repo_id = _context_repo_id(request)
+            resolved = _resolve_context_summaries(retriever, request, repo_id=repo_id)
             raw_items = _extract_raw_items(request)
             pack, decisions = build_context_pack(
                 request_id=request.request_id,
                 session_id=None,
-                repo_id=request.repo.name,
+                repo_id=repo_id,
                 summaries=resolved,
                 budget=request.budget,
                 warnings=route_warnings,
@@ -310,6 +309,47 @@ def _extract_raw_items(request: ContextPackRequest) -> list[RawEvidenceItem]:
             )
         )
     return items
+
+
+def _resolve_context_summaries(
+    retriever: SummaryRetriever,
+    request: ContextPackRequest,
+    *,
+    repo_id: str | None,
+) -> list[ActionSummary]:
+    """Resolve summaries for a context pack without falling back across repos."""
+    if request.candidate_summary_ids:
+        return retriever.resolve_candidates(request.candidate_summary_ids)
+    if repo_id is None:
+        return []
+
+    task_signature = _context_task_signature(request)
+    if task_signature is not None:
+        task_matches = retriever.search(repo_id=repo_id, task_signature=task_signature)
+        if task_matches:
+            return task_matches
+    return retriever.search(repo_id=repo_id)
+
+
+def _context_repo_id(request: ContextPackRequest) -> str | None:
+    """Return the repo key used for summary retrieval and response metadata."""
+    if request.repo.name:
+        return request.repo.name
+    repo_root = request.repo.root.strip()
+    if not repo_root:
+        return None
+    repo_name = Path(repo_root).name
+    return repo_name or None
+
+
+def _context_task_signature(request: ContextPackRequest) -> str | None:
+    """Read an optional task_signature from forward-compatible task extras."""
+    extras = request.task.model_extra or {}
+    raw = extras.get("task_signature")
+    if raw is None:
+        return None
+    task_signature = str(raw).strip()
+    return task_signature or None
 
 
 def build_fallback_suggestions(request: SuggestRequest) -> SuggestResponse:
