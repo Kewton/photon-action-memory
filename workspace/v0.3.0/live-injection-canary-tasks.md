@@ -29,18 +29,20 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | raw log 非注入 | 完了 | raw stdout/stderr は sidecar admission で deny/omitted |
 | fail-open | 完了 | sidecar 不到達時も Anvil turn は継続 |
 | rollout metrics 入力 | 完了 | `photon_eval`, `prompt_adopted`, fail-open event を記録可能 |
-| live injection | 注意 | Anvil 側の pre-turn injection 経路は v0.2 schema/response との整合確認が必要 |
-| behavior change 検証 | 未着手 | memory によって回答または行動が変わる実機シナリオが必要 |
-| canary 有効化 | 未着手 | minimum eval turns 100 件と manual success-rate 比較が未達 |
+| live injection | 完了 | LI-1/LI-2/LI-3 + AN-1〜AN-7 実装済み (Anvil commit 8fc1b45)。smoke test 全通過 |
+| behavior change 検証 | 未着手 | memory によって回答または行動が変わる実機シナリオが必要 (BC-3/BC-4) |
+| canary 有効化 | 未着手 | minimum eval turns 100 件と manual success-rate 比較が未達 (CY-4/CY-5) |
 
 ## 重要な技術メモ
 
-現状の確認では、live injection へ進む前に下記の差分を解消する必要がある。
+~~現状の確認では、live injection へ進む前に下記の差分を解消する必要がある。~~ → **2026-05-09 時点で下記はすべて解消済み (Anvil commit 8fc1b45)**
 
-1. Anvil の shadow 接続で通した mapper 経路は v0.2 request を作れるが、pre-turn live injection 経路 `invoke_photon_context_pack` は別経路で、現在は最小 payload を送る実装になっている。
-2. photon-action-memory の v0.2 response は `context_pack.items[].kind = action_summary` / `text` を返す。一方、Anvil の prompt renderer は legacy 形状に近い `items[].kind = summary` / `summary` を前提にしているため、response normalizer または renderer 更新が必要。
-3. photon-action-memory sidecar は `candidate_summary_ids` がない場合、保存済み summary を自動選択しない。live injection で有用な context を返すには、候補 summary の取得方法を決める必要がある。
-4. live injection は prompt へ入るため、shadow mode より安全性リスクが高い。既存の raw deny、prompt injection filter、token cap、fail-open を維持したまま進める。
+1. ~~Anvil の shadow 接続で通した mapper 経路は v0.2 request を作れるが、pre-turn live injection 経路 `invoke_photon_context_pack` は別経路で、現在は最小 payload を送る実装になっている。~~ → **LI-1 完了**: `invoke_photon_context_pack` が `build_context_pack_request` 経由で v0.2 フル payload を送るように変更。さらに LI-2 で `context_pack_sent_this_turn` reset を `handle_user_message` へ移動し、1 turn 1 call を保証。
+2. ~~photon-action-memory の v0.2 response は `context_pack.items[].kind = action_summary` / `text` を返す。一方、Anvil の prompt renderer は legacy 形状に近い `items[].kind = summary` / `summary` を前提にしているため、response normalizer または renderer 更新が必要。~~ → **LI-3 完了**: `prompt.rs` が `kind=action_summary`/`text` と `text` フィールドを受理。P15-P18 smoke test 通過。
+3. ~~photon-action-memory sidecar は `candidate_summary_ids` がない場合、保存済み summary を自動選択しない。live injection で有用な context を返すには、候補 summary の取得方法を決める必要がある。~~ → **PM-3/PM-4 完了 (photon-action-memory 側)**: repo/task 自動検索で stored summary を取得する方針・実装済み。
+4. live injection は prompt へ入るため、shadow mode より安全性リスクが高い。既存の raw deny、prompt injection filter、token cap、fail-open を維持したまま進める。→ **SG-2〜SG-6 完了**: 全 safety regression を smoke test で確認済み。
+
+**現在の残課題**: 実機での回答・行動差分確認 (BC-3/BC-4) と canary eval turn 蓄積 (CY-4/CY-5) のみ。
 
 ## タスク一覧
 
@@ -116,7 +118,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 |---|---|---|---|---|
 | SG-1 | raw stdout/stderr 非注入 regression test | 両方 | 注意 | photon-action-memory 側は既存 raw evidence deny test で確認済み。Anvil prompt 側 regression は別タスク |
 | SG-2 | prompt injection summary の拒否 test | Anvil | 完了 | P3/P4/P12/P13 smoke test で v0.2 kind item に対しても injection/destructive が拒否されることを確認済み |
-| SG-3 | secret masking test | 両方 | 完了 | P8a/P8b/P14 smoke (Anvil) + raw evidence deny test (photon-action-memory) で確認済み |
+| SG-3 | secret masking test | 両方 | 完了 | P8a/P8b/P14 smoke (Anvil) + `ContextPackItem.text` sanitizer/API test (photon-action-memory) で確認済み |
 | SG-4 | sidecar timeout/fail-open regression test | Anvil | 完了 | T4 (evaluate 500 → fail-open) + T1 (photon=None → 0 calls) + 接続テスト T4-3 で live injection でも turn が止まらないことを確認済み |
 | SG-5 | empty context_pack の扱い | Anvil | 完了 | `render_context_pack` が items=0 で None を返し injection message が生成されない。P9/P10 smoke 通過 |
 | SG-6 | duplicated context injection 防止 | Anvil | 完了 | LI-2 (`context_pack_sent_this_turn` one-shot flag) で 1 turn 1 call を保証。T11 smoke 通過 |
