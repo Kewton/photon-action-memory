@@ -240,6 +240,85 @@ def test_commandmate_send_command_omits_agent_by_default() -> None:
     ]
 
 
+def test_dispatch_commandmate_sends_only_worker_task() -> None:
+    module = load_script()
+    issue = module.Issue(
+        number=1,
+        title="Add worker task",
+        body="Implement the issue.\n\n## Acceptance Criteria\n- Done\n",
+    )
+    analysis = module.analyze_issue(issue, "photon-action-memory", skip_enhance=True)
+    worktree = module.WorktreeResult(
+        issue_number=1,
+        branch_name="feature/issue-1-add-worker-task",
+        worktree_path=Path("/tmp/photon-action-memory-issue-1-add-worker-task"),
+        status="created",
+        message="worktree created",
+    )
+    calls: list[list[str]] = []
+
+    def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(args)
+        return module.subprocess.CompletedProcess(args, 0, "", "")
+
+    results = module.dispatch_commandmate(
+        [analysis],
+        [worktree],
+        dry_run=False,
+        duration="3h",
+        codex_agent_name="",
+        poll=False,
+        runner=fake_runner,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][:3] == [
+        "commandmatedev",
+        "send",
+        "photon-action-memory-feature-issue-1-add-worker-task",
+    ]
+    assert calls[0][3] != "hello"
+    assert results[0].commands == (" ".join(calls[0]),)
+
+
+def test_dispatch_commandmate_reports_send_failure_as_blocked() -> None:
+    module = load_script()
+    issue = module.Issue(
+        number=1,
+        title="Add worker task",
+        body="Implement the issue.\n\n## Acceptance Criteria\n- Done\n",
+    )
+    analysis = module.analyze_issue(issue, "photon-action-memory", skip_enhance=True)
+    worktree = module.WorktreeResult(
+        issue_number=1,
+        branch_name="feature/issue-1-add-worker-task",
+        worktree_path=Path("/tmp/photon-action-memory-issue-1-add-worker-task"),
+        status="created",
+        message="worktree created",
+    )
+
+    def fake_runner(args, **kwargs):  # type: ignore[no-untyped-def]
+        raise module.subprocess.CalledProcessError(
+            99,
+            args,
+            output="",
+            stderr="Error: Resource not found. Check the worktree ID.",
+        )
+
+    results = module.dispatch_commandmate(
+        [analysis],
+        [worktree],
+        dry_run=False,
+        duration="3h",
+        codex_agent_name="",
+        poll=False,
+        runner=fake_runner,
+    )
+
+    assert results[0].status == "blocked"
+    assert results[0].message == "Error: Resource not found. Check the worktree ID."
+
+
 def test_commandmate_ls_command_omits_empty_branch_prefix() -> None:
     module = load_script()
 

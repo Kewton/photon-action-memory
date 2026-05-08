@@ -1104,19 +1104,34 @@ def dispatch_commandmate(
         if result is None or result.status == "blocked":
             continue
         worktree_id = commandmate_worktree_id(result.branch_name)
-        hello = ["commandmatedev", "send", worktree_id, "hello"]
-        if codex_agent_name:
-            hello.extend(["--agent", codex_agent_name])
         task = build_commandmate_send_command(
             worktree_id,
             build_worker_prompt(analysis),
             duration=duration,
             codex_agent_name=codex_agent_name,
         )
-        commands = (" ".join(hello), " ".join(task))
+        commands = (" ".join(task),)
         if not dry_run:
-            runner(hello, cwd=REPO_ROOT, check=True)
-            runner(task, cwd=REPO_ROOT, check=True)
+            try:
+                runner(task, cwd=REPO_ROOT, check=True)
+            except subprocess.CalledProcessError as exc:
+                message = str(exc)
+                if exc.stderr:
+                    message = exc.stderr.strip()
+                elif exc.stdout:
+                    message = exc.stdout.strip()
+                results.append(
+                    WorkerSessionResult(
+                        issue_number=analysis.issue.number,
+                        worktree_id=worktree_id,
+                        status="blocked",
+                        processing=None,
+                        running=None,
+                        message=message,
+                        commands=commands,
+                    )
+                )
+                continue
         status = WorkerSessionResult(
             issue_number=analysis.issue.number,
             worktree_id=worktree_id,
@@ -1996,6 +2011,8 @@ def main() -> int:
                 )
 
     can_publish = True
+    if publish_requested and dispatch_results:
+        can_publish = all(result.status != "blocked" for result in dispatch_results)
     if publish_requested and not dry_run and args.dispatch_commandmate and dispatch_results:
         wait_results = wait_for_commandmate_workers(
             dispatch_results,
@@ -2006,7 +2023,9 @@ def main() -> int:
             render_worker_wait_report(wait_results),
             encoding="utf-8",
         )
-        can_publish = all(result.status == "completed" for result in wait_results)
+        can_publish = can_publish and bool(wait_results) and all(
+            result.status == "completed" for result in wait_results
+        )
 
     pr_results: list[PullRequestResult] = []
     if publish_requested and can_publish:
