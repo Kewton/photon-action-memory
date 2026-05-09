@@ -1,7 +1,7 @@
 # v0.3.0 Live Injection / Canary Tasks
 
 作成日: 2026-05-09
-最終更新: 2026-05-09 JST (Anvil commit 8fc1b45 — LI-1/LI-2/LI-3 + AN-1〜AN-7 + SG-2〜SG-6 完了)
+最終更新: 2026-05-09 JST (Anvil commit 7c3c3a6 — LI-4 fix + BC-3/BC-4 実機確認完了)
 
 ## 目的
 
@@ -29,20 +29,22 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | raw log 非注入 | 完了 | raw stdout/stderr は sidecar admission で deny/omitted |
 | fail-open | 完了 | sidecar 不到達時も Anvil turn は継続 |
 | rollout metrics 入力 | 完了 | `photon_eval`, `prompt_adopted`, fail-open event を記録可能 |
-| live injection | 完了 | LI-1/LI-2/LI-3 + AN-1〜AN-7 実装済み (Anvil commit 8fc1b45)。smoke test 全通過 |
-| behavior change 検証 | 未着手 | memory によって回答または行動が変わる実機シナリオが必要 (BC-3/BC-4) |
+| live injection | 完了 | LI-1/LI-2/LI-3/LI-4 + AN-1〜AN-7 実装済み (Anvil commit 7c3c3a6)。smoke test 全通過 |
+| behavior change 検証 | 完了 | BC-3/BC-4 実機確認済み。`heliograph` を memory から取得して正解回答 (7c3c3a6) |
 | canary 有効化 | 未着手 | minimum eval turns 100 件と manual success-rate 比較が未達 (CY-4/CY-5) |
 
 ## 重要な技術メモ
 
-~~現状の確認では、live injection へ進む前に下記の差分を解消する必要がある。~~ → **2026-05-09 時点で下記はすべて解消済み (Anvil commit 8fc1b45)**
+~~現状の確認では、live injection へ進む前に下記の差分を解消する必要がある。~~ → **2026-05-09 時点で下記はすべて解消済み (Anvil commit 7c3c3a6)**
 
 1. ~~Anvil の shadow 接続で通した mapper 経路は v0.2 request を作れるが、pre-turn live injection 経路 `invoke_photon_context_pack` は別経路で、現在は最小 payload を送る実装になっている。~~ → **LI-1 完了**: `invoke_photon_context_pack` が `build_context_pack_request` 経由で v0.2 フル payload を送るように変更。さらに LI-2 で `context_pack_sent_this_turn` reset を `handle_user_message` へ移動し、1 turn 1 call を保証。
 2. ~~photon-action-memory の v0.2 response は `context_pack.items[].kind = action_summary` / `text` を返す。一方、Anvil の prompt renderer は legacy 形状に近い `items[].kind = summary` / `summary` を前提にしているため、response normalizer または renderer 更新が必要。~~ → **LI-3 完了**: `prompt.rs` が `kind=action_summary`/`text` と `text` フィールドを受理。P15-P18 smoke test 通過。
 3. ~~photon-action-memory sidecar は `candidate_summary_ids` がない場合、保存済み summary を自動選択しない。live injection で有用な context を返すには、候補 summary の取得方法を決める必要がある。~~ → **PM-3/PM-4 完了 (photon-action-memory 側)**: repo/task 自動検索で stored summary を取得する方針・実装済み。
 4. live injection は prompt へ入るため、shadow mode より安全性リスクが高い。既存の raw deny、prompt injection filter、token cap、fail-open を維持したまま進める。→ **SG-2〜SG-6 完了**: 全 safety regression を smoke test で確認済み。
 
-**現在の残課題**: 実機での回答・行動差分確認 (BC-3/BC-4) と canary eval turn 蓄積 (CY-4/CY-5) のみ。
+**LI-4 バグ (2026-05-09 修正済み)**: `parse_items` が `resp.0["items"]` を探していたが、実 sidecar は `resp.0["context_pack"]["items"]` にネストして返す。BC-4 が `items_adopted=0` になっていた原因はこの schema 不一致。proxy ログで根本確認 → `context_pack.items` 優先・top-level `items` fallback で修正 (commit 7c3c3a6, P19/P19b smoke 追加)。
+
+**現在の残課題**: canary eval turn 蓄積 (CY-4/CY-5) と DR-1/DR-4 docs のみ。G3 Gate は BC-3/BC-4 で通過済み。
 
 ## タスク一覧
 
@@ -53,7 +55,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | LI-1 | live injection で使う `ContextPackRequest` を v0.2 mapper 出力へ統一 | Anvil | 完了 | `invoke_photon_context_pack` が `build_context_pack_request` と同等の v0.2 payload を送る |
 | LI-2 | live injection 経路と mapper 経路の二重 `/v1/context/pack` 呼び出しを整理 | Anvil | 完了 | `context_pack_sent_this_turn` reset を `handle_user_message` へ移動。T11 smoke test で 1 turn 1 call を検証済み |
 | LI-3 | Anvil の response normalizer を v0.2 response に対応 | Anvil | 完了 | `prompt.rs` が `kind=action_summary`/`text` と `text` フィールドを受理。P15-P18 smoke test 通過 |
-| LI-4 | shared fixture を追加または更新 | 両方 | 注意 | photon-action-memory 側に live injection 用 shared request/response/summary fixture を追加済み。Anvil 側同期は別タスク |
+| LI-4 | shared fixture を追加または更新 | 両方 | 完了 | photon-action-memory 側 fixture 追加済み。Anvil 側: `parse_items` が v0.2 `context_pack.items` ネスト形式を解除するよう修正 (7c3c3a6)。P19/P19b smoke 通過 |
 | LI-5 | contract smoke を追加 | 両方 | 注意 | photon-action-memory 側 contract smoke を追加済み。Anvil 側 smoke は別タスク |
 
 ### 2. photon-action-memory 側の memory 取得
@@ -85,8 +87,8 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 |---|---|---|---|---|
 | BC-1 | 回答差分を検証する fixture repo を用意 | 両方 | 注意 | photon-action-memory 側の memory seed と request fixture は作成済み。実 repo と Anvil 実行は別タスク |
 | BC-2 | memory seed を投入 | photon-action-memory | 完了 | `anvil-live-codename-001` を `/v1/summary/upsert` で投入可能 |
-| BC-3 | baseline run を実行 | Anvil | 未着手 | photon disabled または canary=0 では memory 由来の答えを出さない |
-| BC-4 | live injection run を実行 | Anvil | 未着手 | canary=1000 で prompt に Photon Context が入り、回答に memory 由来の内容が反映される |
+| BC-3 | baseline run を実行 | Anvil | 完了 | `ANVIL_PHOTON_CANARY=0` → `photon_context_pack.skipped(reason=canary_gate)`。LLM:「コードネームはファイルに記載されていない」→ 正しく答えられない |
+| BC-4 | live injection run を実行 | Anvil | 完了 | `ANVIL_PHOTON_ENABLED=true ANVIL_PHOTON_SHADOW_MODE=false ANVIL_PHOTON_CANARY=1000` → LLM:「The project codename for this repository is heliograph.」✓ ファイル読み込みなし、iter=1 で即答 |
 | BC-5 | 行動差分シナリオを追加 | 両方 | 未着手 | memory に基づき、Anvil が避けるべきコマンドや読むべきファイルを変える |
 | BC-6 | LLM 入力と eval log を検査 | Anvil | 未着手 | `llm-io.jsonl` に Photon Context があり、`eval.jsonl` に `prompt_adopted=true` |
 | BC-7 | 結果を記録 | photon-action-memory | 注意 | `workspace/v0.3.0/live-injection-canary-result.md` を作成済み。Anvil 実機 run 結果は未記録 |
@@ -148,7 +150,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 |---|---|---|
 | G1 | live injection path が v0.2 request/response で unit test 通過 | 完了 (Anvil 8fc1b45: P15-P18, T11) |
 | G2 | `ANVIL_PHOTON_SHADOW_MODE=false`, `ANVIL_PHOTON_CANARY=1000` で Photon Context が prompt に 1 回だけ入る | 完了 (LI-2 one-shot flag + T11 smoke) |
-| G3 | memory 由来の回答または行動差分を実機で確認 | 未着手 (BC-3/BC-4 が必要) |
+| G3 | memory 由来の回答または行動差分を実機で確認 | **完了** (BC-3/BC-4 実機確認済み: canary=0 で無知、canary=1000 で "heliograph" 即答) |
 | G4 | raw log / prompt injection / secret / timeout の regression が全て通る | 完了 (SG-2〜SG-6 全 smoke 通過) |
 | G5 | canary 100 eval turn 以上、fail-open 率許容内、success-rate regression なし | 未着手 (CY-4/CY-5 が必要) |
 | G6 | rollback 手順が確認済み | 完了 (`ANVIL_PHOTON_CANARY=0` または `ANVIL_PHOTON_ENABLED=false` で即時停止) |
@@ -162,8 +164,8 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | photon-action-memory PM-1〜PM-6 | 完了 | live injection 用 seed summary、upsert script、repo/task 自動検索、stale/empty 除外、admission/omitted 理由記録を実装・確認済み |
 | photon-action-memory SG-3 | 完了 | `render_summary()` が `sanitize_text()` を通し、`ContextPackItem.text` の token/Bearer/API_KEY/ローカル絶対パスを mask する regression test を追加済み |
 | photon-action-memory fixture / runbook | 完了 | `anvil_live_action_summary.json`、`anvil_live_context_pack_request.json`、`anvil_live_context_pack_response.json`、`seed_live_injection_summary.py`、sidecar runbook を追加済み |
-| Anvil live injection | 完了 | Anvil commit `8fc1b45` で LI-1〜LI-3、AN-1〜AN-7、SG-2〜SG-6 の smoke test 通過済み |
-| 実機 behavior change | 未着手 | BC-3/BC-4/BC-5/BC-6 は、sidecar を最新コードで再起動し seed 投入後に Anvil 実行で確認する |
+| Anvil live injection | 完了 | Anvil commit `7c3c3a6` で LI-1〜LI-4、AN-1〜AN-7、SG-2〜SG-6 の smoke test 通過済み。根本原因: `parse_items` が `context_pack.items` ネスト形式を見落としていた |
+| 実機 behavior change | **完了** | BC-3: canary=0 で LLM が答えられない。BC-4: canary=1000 で "heliograph" を即答。G3 Gate 通過 |
 | canary 運用 | 未着手 | CY-1〜CY-8 は、live injection 実機確認後に eval turn 蓄積と success-rate 比較を行う |
 
 photon-action-memory 側の検証:
