@@ -1,7 +1,7 @@
 # v0.3.0 Live Injection / Canary Tasks
 
 作成日: 2026-05-09
-最終更新: 2026-05-09 JST (Anvil commit 7c3c3a6 — LI-4 fix + BC-3/BC-4 実機確認完了)
+最終更新: 2026-05-09 JST (BC-6/BC-5 確認完了、CY-1〜CY-3/DR-1 docs 化)
 
 ## 目的
 
@@ -89,8 +89,8 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | BC-2 | memory seed を投入 | photon-action-memory | 完了 | `anvil-live-codename-001` を `/v1/summary/upsert` で投入可能 |
 | BC-3 | baseline run を実行 | Anvil | 完了 | `ANVIL_PHOTON_CANARY=0` → `photon_context_pack.skipped(reason=canary_gate)`。LLM:「コードネームはファイルに記載されていない」→ 正しく答えられない |
 | BC-4 | live injection run を実行 | Anvil | 完了 | `ANVIL_PHOTON_ENABLED=true ANVIL_PHOTON_SHADOW_MODE=false ANVIL_PHOTON_CANARY=1000` → LLM:「The project codename for this repository is heliograph.」✓ ファイル読み込みなし、iter=1 で即答 |
-| BC-5 | 行動差分シナリオを追加 | 両方 | 未着手 | memory に基づき、Anvil が避けるべきコマンドや読むべきファイルを変える |
-| BC-6 | LLM 入力と eval log を検査 | Anvil | 未着手 | `llm-io.jsonl` に Photon Context があり、`eval.jsonl` に `prompt_adopted=true` |
+| BC-5 | 行動差分シナリオを追加 | 両方 | 完了（観察） | policy memory「rm を使わず mv で削除」を注入。items=1, 182 bytes 注入確認済み。ただし qwen3:8b は "untrusted context" ガード文の影響で policy に従わず `rm` を実行。情報提供型（BC-3/BC-4）の方が有効なユースケースであると確認 |
+| BC-6 | LLM 入力と eval log を検査 | Anvil | 完了 | `llm-io.jsonl`: `ollama.generate.request` に `[Photon External Memory]` セクションと "heliograph" が含まれる。`eval.jsonl`: `photon_eval.prompt_adopted = true`、`final_outcome = done` を確認 |
 | BC-7 | 結果を記録 | photon-action-memory | 注意 | `workspace/v0.3.0/live-injection-canary-result.md` を作成済み。Anvil 実機 run 結果は未記録 |
 
 推奨する最小シナリオ:
@@ -105,9 +105,9 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 
 | ID | タスク | Owner | 状態 | 完了条件 |
 |---|---|---|---|---|
-| CY-1 | canary sampling の単位を明文化 | Anvil | 未着手 | `session_id + turn_idx` の deterministic hash を sampling 単位として記録 |
-| CY-2 | canary 比率の env 運用を固定 | Anvil | 未着手 | `ANVIL_PHOTON_CANARY=10` は 1%、`100` は 10%、`1000` は 100% として docs 化 |
-| CY-3 | sampled / unsampled のログを分離 | Anvil | 未着手 | llm/eval log から sampled turn と canary gate skip turn を集計できる |
+| CY-1 | canary sampling の単位を明文化 | Anvil | 完了 | `deterministic_canary_hash(session_id, turn_idx)` = SHA-256 下位 8 bytes を sampling 単位として確認。`should_send_context_pack` が SSOT（`mapper.rs:48-70`） |
+| CY-2 | canary 比率の env 運用を固定 | Anvil | 完了 | `ANVIL_PHOTON_CANARY=0` は 0%（常に skip）、`1-999` は permille、`1000` は 100%（常に inject）。コード上 `if canary>=1000 { return true }` で保証 |
+| CY-3 | sampled / unsampled のログを分離 | Anvil | 完了 | `llm-io.jsonl` の `agent.photon_context_pack.skipped {reason:"canary_gate"}` と `.completed {items_adopted, injected_bytes}` で区別可能。`eval.jsonl` の `photon_eval.prompt_adopted` で採用判定も記録 |
 | CY-4 | 100 eval turn を蓄積 | Anvil | 未着手 | `photon-rollout-check` の minimum eval turns 条件が OK になる |
 | CY-5 | canary / non-canary 成功率比較を実施 | Anvil | 未着手 | `anvil_score.success_score` または代替指標で regression がない |
 | CY-6 | canary 開始条件をゲート化 | Anvil | 未着手 | fail-open 率、raw token 混入、prompt size、success-rate の全条件を満たす |
@@ -129,7 +129,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 
 | ID | タスク | Owner | 状態 | 完了条件 |
 |---|---|---|---|---|
-| DR-1 | Anvil env 設定例を更新 | Anvil | 未着手 | shadow/live/canary/rollback の env が docs に載る |
+| DR-1 | Anvil env 設定例を更新 | Anvil | 完了（本ファイルに記録） | 下記「Anvil env 設定リファレンス」セクションに shadow/live/canary/rollback の env を明文化 |
 | DR-2 | photon-action-memory sidecar 起動例を更新 | photon-action-memory | 完了 | `workspace/v0.3.0/photon-live-injection-sidecar-runbook.md` に起動例を追加 |
 | DR-3 | 接続テスト結果テンプレートを追加 | photon-action-memory | 完了 | `workspace/v0.3.0/live-injection-canary-result.md` を追加 |
 | DR-4 | develop 反映手順を整理 | 両方 | 未着手 | 両 repo の push、PR、merge、issue close の順序が明確 |
@@ -182,6 +182,42 @@ ruff check photon_action_memory/context/render.py tests/test_context_pack.py pho
 
 - 現在起動中の `127.0.0.1:18765` sidecar がある場合、今回の photon-action-memory 側変更を反映するには再起動が必要。
 - `BC-3/BC-4` の実機確認では、`scripts/seed_live_injection_summary.py --url http://127.0.0.1:18765` で seed 投入してから Anvil を実行する。
+
+## Anvil env 設定リファレンス（DR-1）
+
+```bash
+# ---- Photon sidecar 接続 ----
+ANVIL_PHOTON_ENABLED=true           # デフォルト false。true にしないと photon クライアントが無効
+ANVIL_PHOTON_URL=http://127.0.0.1:18765  # デフォルト http://127.0.0.1:3030
+ANVIL_PHOTON_TIMEOUT_MS=5000        # デフォルト 200ms（ローカル専用。短すぎると fail-open）
+
+# ---- Shadow / Live 切り替え ----
+ANVIL_PHOTON_SHADOW_MODE=true       # デフォルト true = shadow mode（prompt 非注入）
+ANVIL_PHOTON_SHADOW_MODE=false      # live injection mode（prompt に Photon Context を注入）
+
+# ---- Canary 比率 ----
+ANVIL_PHOTON_CANARY=0               # 0%  = 全 turn skip（既定値）
+ANVIL_PHOTON_CANARY=10              # 1%  sampling
+ANVIL_PHOTON_CANARY=100             # 10% sampling
+ANVIL_PHOTON_CANARY=500             # 50% sampling
+ANVIL_PHOTON_CANARY=1000            # 100% = 全 turn inject
+
+# sampling 単位: deterministic_canary_hash(session_id, turn_idx) % 1000 < canary
+# 同一 session + turn_idx は毎回同じ結果（再現性あり）
+
+# ---- Rollback ----
+ANVIL_PHOTON_CANARY=0               # 即時 0% に下げる（session 再起動不要）
+# または
+ANVIL_PHOTON_ENABLED=false          # sidecar 通信を完全に無効化
+
+# ---- Rollout 判定 ----
+ANVIL_PHOTON_ROLLOUT_MIN_EVAL_TURNS=100  # デフォルト 100（photon-rollout-check の閾値）
+anvil sessions photon-rollout-check      # rollout 準備状況の確認コマンド
+
+# ---- ログ確認 ----
+# llm-io.jsonl: agent.photon_context_pack.{completed,skipped} で injection 状況を確認
+# eval.jsonl:   photon_eval.prompt_adopted で採用判定を確認
+```
 
 ## 範囲外
 
