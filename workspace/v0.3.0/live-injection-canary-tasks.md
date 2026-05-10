@@ -1,7 +1,7 @@
 # v0.3.0 Live Injection / Canary Tasks
 
 作成日: 2026-05-09
-最終更新: 2026-05-09 JST (BC-6/BC-5 確認完了、CY-1〜CY-3/DR-1 docs 化)
+最終更新: 2026-05-09 JST (CY-4/CY-5 インフラ整備: cy5_success_rate_analysis.py 追加・Anvil docs/photon-ops.md 更新)
 
 ## 目的
 
@@ -108,8 +108,8 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | CY-1 | canary sampling の単位を明文化 | Anvil | 完了 | `deterministic_canary_hash(session_id, turn_idx)` = SHA-256 下位 8 bytes を sampling 単位として確認。`should_send_context_pack` が SSOT（`mapper.rs:48-70`） |
 | CY-2 | canary 比率の env 運用を固定 | Anvil | 完了 | `ANVIL_PHOTON_CANARY=0` は 0%（常に skip）、`1-999` は permille、`1000` は 100%（常に inject）。コード上 `if canary>=1000 { return true }` で保証 |
 | CY-3 | sampled / unsampled のログを分離 | Anvil | 完了 | `llm-io.jsonl` の `agent.photon_context_pack.skipped {reason:"canary_gate"}` と `.completed {items_adopted, injected_bytes}` で区別可能。`eval.jsonl` の `photon_eval.prompt_adopted` で採用判定も記録 |
-| CY-4 | 100 eval turn を蓄積 | Anvil | 未着手 | `photon-rollout-check` の minimum eval turns 条件が OK になる |
-| CY-5 | canary / non-canary 成功率比較を実施 | Anvil | 未着手 | `anvil_score.success_score` または代替指標で regression がない |
+| CY-4 | 100 eval turn を蓄積 | Anvil | 進行中 | `.anvil/config` (photon_canary=500) 設定済み。7/100 turns 蓄積中（通常使用で自動蓄積） |
+| CY-5 | canary / non-canary 成功率比較を実施 | Anvil | 進行中 | `scripts/cy5_success_rate_analysis.py` 作成済み (commit 6729589)。現在 delta=+1.4pp (regression なし)。CY-4 達成後に正式実施 |
 | CY-6 | canary 開始条件をゲート化 | Anvil | 未着手 | fail-open 率、raw token 混入、prompt size、success-rate の全条件を満たす |
 | CY-7 | rollback 手順を作る | Anvil | 未着手 | `ANVIL_PHOTON_CANARY=0` または `ANVIL_PHOTON_ENABLED=false` で即時停止できる |
 | CY-8 | 段階的 rollout | Anvil | 未着手 | 1% → 5% → 10% → 25% → 50% → 100% の各段階で結果を記録 |
@@ -166,7 +166,8 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | photon-action-memory fixture / runbook | 完了 | `anvil_live_action_summary.json`、`anvil_live_context_pack_request.json`、`anvil_live_context_pack_response.json`、`seed_live_injection_summary.py`、sidecar runbook を追加済み |
 | Anvil live injection | 完了 | Anvil commit `7c3c3a6` で LI-1〜LI-4、AN-1〜AN-7、SG-2〜SG-6 の smoke test 通過済み。根本原因: `parse_items` が `context_pack.items` ネスト形式を見落としていた |
 | 実機 behavior change | **完了** | BC-3: canary=0 で LLM が答えられない。BC-4: canary=1000 で "heliograph" を即答。G3 Gate 通過 |
-| canary 運用 | 未着手 | CY-1〜CY-8 は、live injection 実機確認後に eval turn 蓄積と success-rate 比較を行う |
+| canary 運用 インフラ | 完了 | `.anvil/config` (photon_canary=500) で turn 蓄積開始。`scripts/cy5_success_rate_analysis.py` (6729589) と Anvil `docs/photon-ops.md` (§8) で分析環境を整備 |
+| canary 運用 実施 | 進行中 | CY-4: 7/100 eval turns (残 93)、CY-5: delta=+1.4pp (regression なし)。通常使用で蓄積中 |
 
 photon-action-memory 側の検証:
 
