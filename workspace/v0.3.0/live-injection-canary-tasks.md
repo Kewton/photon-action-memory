@@ -1,7 +1,7 @@
 # v0.3.0 Live Injection / Canary Tasks
 
 作成日: 2026-05-09
-最終更新: 2026-05-11 JST (DR-4/LI-5/SG-1/CY-6/CY-8 を更新)
+最終更新: 2026-05-12 JST (CY-4 達成: 114/100 eval turns ✅、photon-rollout-check Condition 2 OK)
 
 ## 目的
 
@@ -31,7 +31,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | rollout metrics 入力 | 完了 | `photon_eval`, `prompt_adopted`, fail-open event を記録可能 |
 | live injection | 完了 | LI-1/LI-2/LI-3/LI-4 + AN-1〜AN-7 実装済み (Anvil commit 7c3c3a6)。smoke test 全通過 |
 | behavior change 検証 | 完了 | BC-3/BC-4 実機確認済み。`heliograph` を memory から取得して正解回答 (7c3c3a6) |
-| canary 有効化 | 進行中 | インフラ整備完了。eval turn 蓄積中 (9/100)。CY-6/CY-8 の判定コマンド・記録テンプレートは整備済み。実 rollout は CY-4/CY-5/CY-6 PASS 後 |
+| canary 有効化 | 進行中 | CY-4 完了（114/100 turns、Condition 2 OK）。CY-5 は正式比較データが不足（sampled=10件のみ）。CY-5 の正式判定後に CY-6→CY-8 へ進む |
 
 ## 重要な技術メモ
 
@@ -108,8 +108,8 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | CY-1 | canary sampling の単位を明文化 | Anvil | 完了 | `deterministic_canary_hash(session_id, turn_idx)` = SHA-256 下位 8 bytes を sampling 単位として確認。`should_send_context_pack` が SSOT（`mapper.rs:48-70`） |
 | CY-2 | canary 比率の env 運用を固定 | Anvil | 完了 | `ANVIL_PHOTON_CANARY=0` は 0%（常に skip）、`1-999` は permille、`1000` は 100%（常に inject）。コード上 `if canary>=1000 { return true }` で保証 |
 | CY-3 | sampled / unsampled のログを分離 | Anvil | 完了 | `llm-io.jsonl` の `agent.photon_context_pack.skipped {reason:"canary_gate"}` と `.completed {items_adopted, injected_bytes}` で区別可能。`eval.jsonl` の `photon_eval.prompt_adopted` で採用判定も記録 |
-| CY-4 | 100 eval turn を蓄積 | Anvil | 進行中 | `.anvil/config` (photon_canary=500) 設定済み。9/100 turns 蓄積中（通常使用で自動蓄積） |
-| CY-5 | canary / non-canary 成功率比較を実施 | Anvil | 進行中 | `scripts/cy5_success_rate_analysis.py` 作成済み。現時点は `photon_eval_turns=9` のため正式判定前 |
+| CY-4 | 100 eval turn を蓄積 | Anvil | **完了** | 専用 state_dir `/localwork/anvilcy4_state_dir` に 114 turns 蓄積。`photon-rollout-check` Condition 2 OK。canary=1000 + qwen3:8b + ANVIL_NO_AUTO_TEST=1 で 110 run、95.6% done |
+| CY-5 | canary / non-canary 成功率比較を実施 | Anvil | 注意 | 専用 state_dir は canary=1000 のみで unsampled=0（比較不可）。全履歴 state_dir: sampled=10 turns 60.0% / unsampled=110 turns 73.6%、delta=-13.6pp、サンプル不足で参考値のみ |
 | CY-6 | canary 開始条件をゲート化 | Anvil | 完了 | `scripts/cy6_gate_check.py` を追加。fail-open 率、raw marker、prompt size、success-rate regression を集約判定し、JSON/text で記録可能。現行 default state は過去の意図的 fail-open も含むため BLOCKED |
 | CY-7 | rollback 手順を作る | Anvil | 完了 | `Anvil env 設定リファレンス` セクションと `docs/photon-ops.md` §8 に rollback 手順を記載済み |
 | CY-8 | 段階的 rollout | Anvil | 完了 | 1% → 5% → 10% → 25% → 50% → 100% の手順と記録テンプレートを追加。実 rollout は CY-6 PASS 後に開始 |
@@ -152,7 +152,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | G2 | `ANVIL_PHOTON_SHADOW_MODE=false`, `ANVIL_PHOTON_CANARY=1000` で Photon Context が prompt に 1 回だけ入る | 完了 (LI-2 one-shot flag + T11 smoke) |
 | G3 | memory 由来の回答または行動差分を実機で確認 | **完了** (BC-3/BC-4 実機確認済み: canary=0 で無知、canary=1000 で "heliograph" 即答) |
 | G4 | raw log / prompt injection / secret / timeout の regression が全て通る | 完了 (SG-1〜SG-6 smoke 通過。2026-05-11 Anvil photon smoke 73 passed) |
-| G5 | canary 100 eval turn 以上、fail-open 率許容内、success-rate regression なし | 進行中 (CY-4: 9/100 turns。default state では過去の意図的 fail-open を含むため CY-6 BLOCKED。正式判定は rollout 用 state/window で実施) |
+| G5 | canary 100 eval turn 以上、fail-open 率許容内、success-rate regression なし | 進行中 (CY-4: **114/100 ✅** 専用 state_dir で達成。CY-5: 全履歴 sampled=10 件のみでサンプル不足。正式比較には canary=500 運用蓄積が必要) |
 | G6 | rollback 手順が確認済み | 完了 (`ANVIL_PHOTON_CANARY=0` または `ANVIL_PHOTON_ENABLED=false` で即時停止) |
 
 ## 対応状況追記
