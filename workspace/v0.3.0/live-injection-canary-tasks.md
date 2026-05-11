@@ -1,7 +1,7 @@
 # v0.3.0 Live Injection / Canary Tasks
 
 作成日: 2026-05-09
-最終更新: 2026-05-09 JST (CY-4/CY-5 インフラ整備: cy5_success_rate_analysis.py 追加・Anvil docs/photon-ops.md 更新)
+最終更新: 2026-05-11 JST (CY-7 完了確認、現在地・残課題・G5 を最新化)
 
 ## 目的
 
@@ -31,7 +31,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | rollout metrics 入力 | 完了 | `photon_eval`, `prompt_adopted`, fail-open event を記録可能 |
 | live injection | 完了 | LI-1/LI-2/LI-3/LI-4 + AN-1〜AN-7 実装済み (Anvil commit 7c3c3a6)。smoke test 全通過 |
 | behavior change 検証 | 完了 | BC-3/BC-4 実機確認済み。`heliograph` を memory から取得して正解回答 (7c3c3a6) |
-| canary 有効化 | 未着手 | minimum eval turns 100 件と manual success-rate 比較が未達 (CY-4/CY-5) |
+| canary 有効化 | 進行中 | インフラ整備完了。eval turn 蓄積中 (7/100)。CY-4/CY-5 達成後に CY-6→CY-8 へ進む |
 
 ## 重要な技術メモ
 
@@ -44,7 +44,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 
 **LI-4 バグ (2026-05-09 修正済み)**: `parse_items` が `resp.0["items"]` を探していたが、実 sidecar は `resp.0["context_pack"]["items"]` にネストして返す。BC-4 が `items_adopted=0` になっていた原因はこの schema 不一致。proxy ログで根本確認 → `context_pack.items` 優先・top-level `items` fallback で修正 (commit 7c3c3a6, P19/P19b smoke 追加)。
 
-**現在の残課題**: canary eval turn 蓄積 (CY-4/CY-5) と DR-1/DR-4 docs のみ。G3 Gate は BC-3/BC-4 で通過済み。
+**現在の残課題**: canary eval turn 蓄積 (CY-4/CY-5) と DR-4 のみ。DR-1 は `docs/photon-ops.md` §8 を含め完了。G3 Gate は BC-3/BC-4 で通過済み。
 
 ## タスク一覧
 
@@ -111,7 +111,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | CY-4 | 100 eval turn を蓄積 | Anvil | 進行中 | `.anvil/config` (photon_canary=500) 設定済み。7/100 turns 蓄積中（通常使用で自動蓄積） |
 | CY-5 | canary / non-canary 成功率比較を実施 | Anvil | 進行中 | `scripts/cy5_success_rate_analysis.py` 作成済み (commit 6729589)。現在 delta=+1.4pp (regression なし)。CY-4 達成後に正式実施 |
 | CY-6 | canary 開始条件をゲート化 | Anvil | 未着手 | fail-open 率、raw token 混入、prompt size、success-rate の全条件を満たす |
-| CY-7 | rollback 手順を作る | Anvil | 未着手 | `ANVIL_PHOTON_CANARY=0` または `ANVIL_PHOTON_ENABLED=false` で即時停止できる |
+| CY-7 | rollback 手順を作る | Anvil | 完了 | `Anvil env 設定リファレンス` セクションと `docs/photon-ops.md` §8 に rollback 手順を記載済み |
 | CY-8 | 段階的 rollout | Anvil | 未着手 | 1% → 5% → 10% → 25% → 50% → 100% の各段階で結果を記録 |
 
 ### 6. Safety / regression
@@ -129,7 +129,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 
 | ID | タスク | Owner | 状態 | 完了条件 |
 |---|---|---|---|---|
-| DR-1 | Anvil env 設定例を更新 | Anvil | 完了（本ファイルに記録） | 下記「Anvil env 設定リファレンス」セクションに shadow/live/canary/rollback の env を明文化 |
+| DR-1 | Anvil env 設定例を更新 | Anvil | 完了 | 本ファイル「Anvil env 設定リファレンス」＋ Anvil `docs/photon-ops.md` §2/§8 に shadow/live/canary/rollback/CY-4/CY-5 の env と手順を明文化 (commit 81febcf) |
 | DR-2 | photon-action-memory sidecar 起動例を更新 | photon-action-memory | 完了 | `workspace/v0.3.0/photon-live-injection-sidecar-runbook.md` に起動例を追加 |
 | DR-3 | 接続テスト結果テンプレートを追加 | photon-action-memory | 完了 | `workspace/v0.3.0/live-injection-canary-result.md` を追加 |
 | DR-4 | develop 反映手順を整理 | 両方 | 未着手 | 両 repo の push、PR、merge、issue close の順序が明確 |
@@ -152,7 +152,7 @@ Anvil と photon-action-memory の shadow mode 接続で確認した安全性を
 | G2 | `ANVIL_PHOTON_SHADOW_MODE=false`, `ANVIL_PHOTON_CANARY=1000` で Photon Context が prompt に 1 回だけ入る | 完了 (LI-2 one-shot flag + T11 smoke) |
 | G3 | memory 由来の回答または行動差分を実機で確認 | **完了** (BC-3/BC-4 実機確認済み: canary=0 で無知、canary=1000 で "heliograph" 即答) |
 | G4 | raw log / prompt injection / secret / timeout の regression が全て通る | 完了 (SG-2〜SG-6 全 smoke 通過) |
-| G5 | canary 100 eval turn 以上、fail-open 率許容内、success-rate regression なし | 未着手 (CY-4/CY-5 が必要) |
+| G5 | canary 100 eval turn 以上、fail-open 率許容内、success-rate regression なし | 進行中 (CY-4: 7/100 turns、CY-5: delta=+1.4pp。通常使用で蓄積中) |
 | G6 | rollback 手順が確認済み | 完了 (`ANVIL_PHOTON_CANARY=0` または `ANVIL_PHOTON_ENABLED=false` で即時停止) |
 
 ## 対応状況追記
