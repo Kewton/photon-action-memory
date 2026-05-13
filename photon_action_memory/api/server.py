@@ -43,9 +43,11 @@ from photon_action_memory.api.schema_v2 import (
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.raw_policy import RawEvidenceItem
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
+from photon_action_memory.memory.chunks import ActionChunker
 from photon_action_memory.memory.evidence import EvidenceExpander
 from photon_action_memory.memory.retrieval import SummaryRetriever
 from photon_action_memory.memory.store import SQLiteEventStore
+from photon_action_memory.memory.summaries import ActionSummaryBuilder, SummaryCanonicalizer
 from photon_action_memory.memory.summary_store import SummaryStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
@@ -241,22 +243,45 @@ def create_app(
 
     @app.post("/v1/summarize", response_model=SummarizeResponse)
     def summarize(request: SummarizeRequest) -> SummarizeResponse:
+        try:
+            repo_id = request.repo_id
+            if repo_id is None and request.repo is not None:
+                repo_id = request.repo.name
+            task_signature = request.task_signature
+            if task_signature is None and request.task is not None:
+                task_signature = request.task.summary or request.task.user_request
+
+            stored_events = event_store.list_events(
+                session_id=request.session_id,
+                repo_id=repo_id,
+            )
+            chunks = ActionChunker().chunk(stored_events)
+            builder = ActionSummaryBuilder()
+            canonicalizer = SummaryCanonicalizer()
+            summaries: list[ActionSummary] = []
+            summary_ids: list[str] = []
+            for chunk in chunks:
+                summary = builder.build(chunk)
+                if task_signature is not None:
+                    summary = summary.model_copy(update={"task_signature": task_signature})
+                summary = canonicalizer.canonicalize(summary).summary
+                _summary_store.upsert(summary)
+                summaries.append(summary)
+                summary_ids.append(summary.summary_id)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         return SummarizeResponse(
             schema_version=DEFAULT_SCHEMA_VERSION_V2,
             request_id=request.request_id,
             model_version=FALLBACK_MODEL_VERSION,
-            sidecar_status="not_implemented",
-            summary=None,
+            sidecar_status="ok",
+            status="ok",
+            chunks_built=len(chunks),
+            summaries_upserted=len(summary_ids),
+            summary_ids=summary_ids,
+            summary=summaries[0] if summaries else None,
             validation=None,
-            warnings=[
-                ContextPackWarning(
-                    kind="not_implemented",
-                    message=(
-                        "summarize contract is fixed in v0.4.0 P0; "
-                        "generator body lands in a follow-up issue"
-                    ),
-                )
-            ],
+            warnings=[],
         )
 
     @app.post("/v1/evaluate", response_model=EvaluateResponse)

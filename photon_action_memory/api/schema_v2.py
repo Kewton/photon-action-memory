@@ -437,7 +437,7 @@ class SummaryValidateResponse(SidecarModel):
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/summarize (Issue #82 — v0.4.0 P0 contract)
+# POST /v1/summarize (Issue #82 contract + Issue #83 pipeline)
 # ---------------------------------------------------------------------------
 
 
@@ -473,7 +473,9 @@ class SummarizeRequest(SidecarModel):
     turn_id: str | None = None
     agent: AgentInfo | None = None
     repo: RepoInfo | None = None
+    repo_id: str | None = None
     task: TaskState | None = None
+    task_signature: str | None = None
     summary_level: SummaryLevel | str = "turn"
     chunk_ids: list[str] = Field(default_factory=list)
     recent_event_ids: list[str] = Field(default_factory=list)
@@ -485,16 +487,19 @@ class SummarizeResponse(SidecarModel):
     """Response body for POST /v1/summarize.
 
     The generated ``ActionSummary`` is returned inline so callers can pipe it
-    straight into ``/v1/summary/upsert`` or ``/v1/summary/validate``. While
-    the generator is not yet implemented, ``sidecar_status="not_implemented"``
-    is returned with ``summary=None`` and a non-fatal warning so Anvil can
-    fail-open without a contract break.
+    straight into ``/v1/summary/upsert`` or ``/v1/summary/validate``. Pipeline
+    counters expose how many ActionChunks were built and how many summaries
+    were persisted for the request.
     """
 
     schema_version: SchemaVersionV2
     request_id: str
     model_version: str
     sidecar_status: str
+    status: str = "ok"
+    chunks_built: int = Field(default=0, ge=0)
+    summaries_upserted: int = Field(default=0, ge=0)
+    summary_ids: list[str] = Field(default_factory=list)
     summary: ActionSummary | None = None
     validation: SummaryValidationResult | None = None
     warnings: list[ContextPackWarning] = Field(default_factory=list)
