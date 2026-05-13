@@ -34,6 +34,8 @@ from photon_action_memory.api.schema_v2 import (
     EvidenceExpandRequest,
     EvidenceExpandResponse,
     OmittedEvidence,
+    SummarizeRequest,
+    SummarizeResponse,
     SummaryValidateRequest,
     SummaryValidateResponse,
     TokenBudget,
@@ -237,9 +239,25 @@ def create_app(
             results=results,
         )
 
-    @app.post("/v1/summarize")
-    def summarize_stub() -> None:
-        raise HTTPException(status_code=501, detail="summarize is not implemented in M2")
+    @app.post("/v1/summarize", response_model=SummarizeResponse)
+    def summarize(request: SummarizeRequest) -> SummarizeResponse:
+        return SummarizeResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            model_version=FALLBACK_MODEL_VERSION,
+            sidecar_status="not_implemented",
+            summary=None,
+            validation=None,
+            warnings=[
+                ContextPackWarning(
+                    kind="not_implemented",
+                    message=(
+                        "summarize contract is fixed in v0.4.0 P0; "
+                        "generator body lands in a follow-up issue"
+                    ),
+                )
+            ],
+        )
 
     @app.post("/v1/evaluate", response_model=EvaluateResponse)
     def evaluate(request: EvaluateRequest) -> EvaluateResponse:

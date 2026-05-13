@@ -19,6 +19,9 @@ from photon_action_memory.api.schema_v2 import (
     EvidenceExpandRequest,
     EvidenceExpandResponse,
     EvidenceRef,
+    SummarizePolicy,
+    SummarizeRequest,
+    SummarizeResponse,
     SummaryValidateRequest,
     SummaryValidateResponse,
     SummaryValidationResult,
@@ -745,6 +748,166 @@ class TestSummaryValidate:
             SummaryValidateRequest.model_validate(
                 {"request_id": "validate_001", "summary_ids": ["sum_001"]}
             )
+
+
+# ---------------------------------------------------------------------------
+# SummarizeRequest / SummarizeResponse (Issue #82)
+# ---------------------------------------------------------------------------
+
+
+class TestSummarizeRequest:
+    def test_minimal_round_trip(self) -> None:
+        request = SummarizeRequest.model_validate(
+            {"schema_version": SCHEMA_V2, "request_id": "summarize_001"}
+        )
+        rt = SummarizeRequest.model_validate_json(request.model_dump_json())
+        assert rt.request_id == "summarize_001"
+        assert rt.summary_level == "turn"
+        assert rt.chunk_ids == []
+        assert rt.recent_event_ids == []
+        assert rt.parent_summary_ids == []
+        assert isinstance(rt.policy, SummarizePolicy)
+        assert rt.policy.require_evidence_ids is True
+        assert rt.policy.separate_fact_and_hypothesis is True
+
+    def test_full_anvil_turn_payload(self) -> None:
+        request = SummarizeRequest.model_validate(
+            {
+                "schema_version": SCHEMA_V2,
+                "request_id": "summarize_002",
+                "session_id": "sess_001",
+                "turn_id": "turn_007",
+                "agent": {"name": "anvil", "version": "0.4.0-rc1"},
+                "repo": {"root": "/repo", "name": "demo"},
+                "task": {"user_request": "fix session test", "mode": "act"},
+                "summary_level": "turn",
+                "chunk_ids": ["chunk_017", "chunk_018"],
+                "recent_event_ids": ["evt_041", "evt_052"],
+                "parent_summary_ids": ["sum_session_001"],
+                "policy": {
+                    "require_evidence_ids": True,
+                    "separate_fact_and_hypothesis": True,
+                    "include_failed_attempts": True,
+                    "include_avoid_guidance": True,
+                    "max_summary_chars": 2000,
+                    "max_facts": 8,
+                    "max_hypotheses": 4,
+                },
+            }
+        )
+        assert request.session_id == "sess_001"
+        assert request.turn_id == "turn_007"
+        assert request.agent is not None
+        assert request.agent.name == "anvil"
+        assert request.repo is not None
+        assert request.repo.root == "/repo"
+        assert request.task is not None
+        assert request.task.user_request == "fix session test"
+        assert request.summary_level == "turn"
+        assert request.chunk_ids == ["chunk_017", "chunk_018"]
+        assert request.recent_event_ids == ["evt_041", "evt_052"]
+        assert request.parent_summary_ids == ["sum_session_001"]
+        assert request.policy.max_summary_chars == 2000
+        assert request.policy.max_facts == 8
+
+    def test_schema_version_required(self) -> None:
+        with pytest.raises(ValidationError):
+            SummarizeRequest.model_validate({"request_id": "summarize_001"})
+
+    def test_request_id_required(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            SummarizeRequest.model_validate({"schema_version": SCHEMA_V2})
+        assert "request_id" in str(exc_info.value)
+
+    def test_empty_payload_fails(self) -> None:
+        with pytest.raises(ValidationError):
+            SummarizeRequest.model_validate({})
+
+    def test_policy_max_fields_reject_negative(self) -> None:
+        with pytest.raises(ValidationError):
+            SummarizePolicy.model_validate({"max_facts": -1})
+        with pytest.raises(ValidationError):
+            SummarizePolicy.model_validate({"max_summary_chars": -1})
+
+    def test_unknown_policy_fields_preserved(self) -> None:
+        policy = SummarizePolicy.model_validate({"allow_termination_when_unresolved": True})
+        assert policy.model_dump()["allow_termination_when_unresolved"] is True
+
+    def test_unknown_request_fields_preserved(self) -> None:
+        request = SummarizeRequest.model_validate(
+            {
+                "schema_version": SCHEMA_V2,
+                "request_id": "summarize_003",
+                "experiment_tag": "v0.4.0-canary",
+            }
+        )
+        assert request.model_dump()["experiment_tag"] == "v0.4.0-canary"
+
+
+class TestSummarizeResponse:
+    def test_minimal_round_trip(self) -> None:
+        response = SummarizeResponse.model_validate(
+            {
+                "schema_version": SCHEMA_V2,
+                "request_id": "summarize_001",
+                "model_version": "photon-action-memory-v0.1.0-fallback",
+                "sidecar_status": "not_implemented",
+            }
+        )
+        rt = SummarizeResponse.model_validate_json(response.model_dump_json())
+        assert rt.sidecar_status == "not_implemented"
+        assert rt.summary is None
+        assert rt.validation is None
+        assert rt.warnings == []
+
+    def test_full_payload_with_summary_and_validation(self) -> None:
+        response = SummarizeResponse.model_validate(
+            {
+                "schema_version": SCHEMA_V2,
+                "request_id": "summarize_001",
+                "model_version": "photon-action-memory-v0.4.0",
+                "sidecar_status": "ok",
+                "summary": {
+                    "schema_version": SCHEMA_V2,
+                    "summary_id": "sum_001",
+                    "summary_level": "turn",
+                },
+                "validation": {
+                    "summary_id": "sum_001",
+                    "status": "valid",
+                    "score": 0.94,
+                },
+                "warnings": [{"kind": "missing_evidence", "message": "fact 1 has no evidence_id"}],
+            }
+        )
+        rt = SummarizeResponse.model_validate_json(response.model_dump_json())
+        assert rt.summary is not None
+        assert rt.summary.summary_id == "sum_001"
+        assert rt.validation is not None
+        assert rt.validation.score == pytest.approx(0.94)
+        assert rt.warnings[0].kind == "missing_evidence"
+
+    def test_schema_version_required(self) -> None:
+        with pytest.raises(ValidationError):
+            SummarizeResponse.model_validate(
+                {
+                    "request_id": "summarize_001",
+                    "model_version": "fallback",
+                    "sidecar_status": "ok",
+                }
+            )
+
+    def test_unknown_fields_preserved(self) -> None:
+        response = SummarizeResponse.model_validate(
+            {
+                "schema_version": SCHEMA_V2,
+                "request_id": "summarize_001",
+                "model_version": "fallback",
+                "sidecar_status": "ok",
+                "trace_id": "trace-001",
+            }
+        )
+        assert response.model_dump()["trace_id"] == "trace-001"
 
 
 # ---------------------------------------------------------------------------
