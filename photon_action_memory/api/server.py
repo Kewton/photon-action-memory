@@ -159,6 +159,7 @@ def create_app(
             repo_id = _context_repo_id(request)
             resolved = _resolve_context_summaries(retriever, request, repo_id=repo_id)
             raw_items = _extract_raw_items(request)
+            feedback_map = _summary_store.get_feedback_map([s.summary_id for s in resolved])
             pack, decisions = build_context_pack(
                 request_id=request.request_id,
                 session_id=None,
@@ -167,6 +168,7 @@ def create_app(
                 budget=request.budget,
                 warnings=route_warnings,
                 raw_items=raw_items,
+                summary_feedback=feedback_map,
             )
             sidecar_status = "degraded" if route_warnings else "ok"
         except Exception as exc:
@@ -338,9 +340,26 @@ def create_app(
                     "outcome": evt.outcome,
                     "outcome_detail": evt.outcome_detail,
                     "latency_ms": evt.latency_ms,
+                    "summary_ids_adopted": evt.summary_ids_adopted,
                 }
                 event_store.append(payload)
                 logged += 1
+                if evt.summary_ids_adopted:
+                    try:
+                        _summary_store.record_outcomes(
+                            evt.summary_ids_adopted,
+                            adoption_status=evt.adoption_status,
+                            outcome=evt.outcome,
+                            evidence_expand_requested=evt.evidence_expand_requested,
+                        )
+                    except Exception as exc:
+                        logger.warning("summary feedback record error: %s", exc)
+                        route_warnings.append(
+                            ContextPackWarning(
+                                kind="summary_feedback_error",
+                                message=str(exc),
+                            )
+                        )
         except Exception as exc:
             logger.warning("evaluate log error: %s", exc)
             route_warnings.append(ContextPackWarning(kind="eval_log_error", message=str(exc)))
