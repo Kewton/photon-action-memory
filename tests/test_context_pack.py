@@ -103,8 +103,7 @@ def test_render_summary_masks_prompt_visible_secrets_and_paths() -> None:
     summary = _make_summary(
         facts=[
             _fact(
-                "token=sk-secretvalue1234567890 and file "
-                "/Users/example/private/project/config.toml"
+                "token=sk-secretvalue1234567890 and file /Users/example/private/project/config.toml"
             )
         ],
         failed_attempts=[

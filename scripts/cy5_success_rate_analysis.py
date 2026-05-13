@@ -10,6 +10,7 @@ photon_canary 別の final_outcome 成功率を集計する。
     python3 scripts/cy5_success_rate_analysis.py --state-dir /path/to/anvil/sessions
     python3 scripts/cy5_success_rate_analysis.py --json   # JSON 出力
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,7 +20,6 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-
 SUCCESS_OUTCOMES = {"done"}
 FAILURE_OUTCOMES = {"transport_error", "missing_repo_edits", "unsafe_block", "no_progress"}
 
@@ -28,7 +28,9 @@ MIN_EVAL_TURNS_DEFAULT = 100
 
 
 def _default_state_root() -> Path:
-    xdg = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    xdg = os.environ.get("XDG_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "state"
+    )
     return Path(xdg) / "anvil" / "sessions"
 
 
@@ -51,21 +53,23 @@ def _collect(sessions_dir: Path) -> list[dict]:
                     except json.JSONDecodeError:
                         continue
                     # photon_eval が None のレコードも含める（non-canary 側として）
-                    records.append({
-                        "session_id": r.get("session_id", ""),
-                        "photon_canary": r.get("photon_canary", 0),
-                        "final_outcome": r.get("final_outcome") or "",
-                        "prompt_adopted": (r.get("photon_eval") or {}).get("prompt_adopted"),
-                        "success_score": (r.get("anvil_score") or {}).get("success_score"),
-                        "photon_eval_present": r.get("photon_eval") is not None,
-                    })
+                    records.append(
+                        {
+                            "session_id": r.get("session_id", ""),
+                            "photon_canary": r.get("photon_canary", 0),
+                            "final_outcome": r.get("final_outcome") or "",
+                            "prompt_adopted": (r.get("photon_eval") or {}).get("prompt_adopted"),
+                            "success_score": (r.get("anvil_score") or {}).get("success_score"),
+                            "photon_eval_present": r.get("photon_eval") is not None,
+                        }
+                    )
         except OSError:
             continue
     return records
 
 
 def _analyse(records: list[dict]) -> dict:
-    canary_group: dict[str, list] = defaultdict(list)   # "sampled" / "unsampled"
+    canary_group: dict[str, list] = defaultdict(list)  # "sampled" / "unsampled"
     for r in records:
         key = "sampled" if r["photon_canary"] > 0 else "unsampled"
         canary_group[key].append(r)
@@ -133,13 +137,17 @@ def _print_report(result: dict, min_turns: int) -> None:
     print(f"       あと {max(0, min_turns - pev)} turns 必要")
 
     # CY-5
-    print(f"\n[CY-5] 成功率比較 (final_outcome=done を成功とみなす)")
-    print(f"       sampled   (canary>0): {s['total']} turns  "
-          f"success={s['success']}({s['success_rate']}%)"
-          f"  failure={s['failure']}  other={s['other']}")
-    print(f"       unsampled (canary=0): {u['total']} turns  "
-          f"success={u['success']}({u['success_rate']}%)"
-          f"  failure={u['failure']}  other={u['other']}")
+    print("\n[CY-5] 成功率比較 (final_outcome=done を成功とみなす)")
+    print(
+        f"       sampled   (canary>0): {s['total']} turns  "
+        f"success={s['success']}({s['success_rate']}%)"
+        f"  failure={s['failure']}  other={s['other']}"
+    )
+    print(
+        f"       unsampled (canary=0): {u['total']} turns  "
+        f"success={u['success']}({u['success_rate']}%)"
+        f"  failure={u['failure']}  other={u['other']}"
+    )
 
     if s["success_rate"] is not None and u["success_rate"] is not None:
         delta = s["success_rate"] - u["success_rate"]
@@ -149,7 +157,7 @@ def _print_report(result: dict, min_turns: int) -> None:
     else:
         print("\n       どちらかのグループにデータがありません")
 
-    print(f"\n[canary 分布]")
+    print("\n[canary 分布]")
     for k, v in sorted(result["canary_ratio_distribution"].items()):
         print(f"       {k}: {v} turns")
 
@@ -165,12 +173,19 @@ def _print_report(result: dict, min_turns: int) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="CY-5: canary/non-canary 成功率比較")
-    parser.add_argument("--state-dir", type=Path, default=_default_state_root(),
-                        help="Anvil sessions ディレクトリ (default: ~/.local/state/anvil/sessions)")
-    parser.add_argument("--min-turns", type=int, default=MIN_EVAL_TURNS_DEFAULT,
-                        help=f"CY-4 の最小 eval turns (default: {MIN_EVAL_TURNS_DEFAULT})")
-    parser.add_argument("--json", action="store_true", dest="json_out",
-                        help="JSON 形式で出力")
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=_default_state_root(),
+        help="Anvil sessions ディレクトリ (default: ~/.local/state/anvil/sessions)",
+    )
+    parser.add_argument(
+        "--min-turns",
+        type=int,
+        default=MIN_EVAL_TURNS_DEFAULT,
+        help=f"CY-4 の最小 eval turns (default: {MIN_EVAL_TURNS_DEFAULT})",
+    )
+    parser.add_argument("--json", action="store_true", dest="json_out", help="JSON 形式で出力")
     args = parser.parse_args()
 
     records = _collect(args.state_dir)
