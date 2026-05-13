@@ -26,6 +26,8 @@ from photon_action_memory.api.schema_v2 import (
     DEFAULT_SCHEMA_VERSION_V2,
     ActionChunk,
     ActionSummary,
+    AdmissionPolicy,
+    ContextAdmissionDecision,
     ContextPack,
     ContextPackRequest,
     ContextPackResponse,
@@ -35,19 +37,27 @@ from photon_action_memory.api.schema_v2 import (
     EvidenceExpandRequest,
     EvidenceExpandResponse,
     OmittedEvidence,
+    OmittedItem,
     SummarizeRequest,
     SummarizeResponse,
     SummaryValidateRequest,
     SummaryValidateResponse,
+    SummaryValidationIssue,
+    SummaryValidationResult,
     TokenBudget,
     TokenCost,
 )
 from photon_action_memory.context.pack import build_context_pack
-from photon_action_memory.context.raw_policy import RawEvidenceItem
+from photon_action_memory.context.raw_policy import (
+    RawEvidenceItem,
+    evaluate_raw_item,
+    has_sensitive_content,
+)
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 from photon_action_memory.memory.chunks import ActionChunker
 from photon_action_memory.memory.evidence import EvidenceExpander
 from photon_action_memory.memory.retrieval import SummaryRetriever
+from photon_action_memory.memory.sanitizer import sanitize_text_with_report
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.memory.summaries import (
     ActionSummaryBuilder,
@@ -249,6 +259,8 @@ def create_app(
 
     @app.post("/v1/summarize", response_model=SummarizeResponse)
     def summarize(request: SummarizeRequest) -> SummarizeResponse:
+        if request.draft_summary is not None:
+            return _summarize_with_firewall(request, event_store=event_store)
         if "chunks" in request.model_fields_set:
             return _summarize_inline_chunks(request, event_store, _summary_store)
 
@@ -433,6 +445,255 @@ def _build_hierarchical_summary(request: SummarizeRequest) -> ActionSummary:
     if request.summary_id:
         overrides["summary_id"] = request.summary_id
     return state.model_copy(update=overrides)
+
+
+_SUMMARIZE_RAW_POLICY_NAME = "raw_tool_log_default_deny"
+
+
+def _summarize_with_firewall(
+    request: SummarizeRequest,
+    *,
+    event_store: SQLiteEventStore,
+) -> SummarizeResponse:
+    """Apply the Action Context Firewall to a draft ActionSummary.
+
+    1) Redact secrets / home paths / token-like strings from prompt-visible
+       fields so they cannot reach a downstream ContextPack.
+    2) Deny any raw_evidence under the existing default-deny policy.
+    3) Run SummaryFidelityChecker so the caller can see grounding / raw
+       leakage signals in ``validation_results``.
+    4) Surface ``evidence_ids_referenced`` so the caller can follow up with
+       /v1/evidence/expand for redacted snippets on demand.
+    """
+    draft = request.draft_summary
+    if draft is None:
+        raise ValueError("draft_summary is required for summarize firewall mode")
+    try:
+        extras = request.model_extra or {}
+        evidence_records: list[dict[str, Any]] = []
+        raw_evidence_extra = extras.get("evidence_records")
+        if isinstance(raw_evidence_extra, list):
+            evidence_records.extend(r for r in raw_evidence_extra if isinstance(r, dict))
+        evidence_records.extend(ev.payload for ev in event_store.list_events())
+
+        raw_items = _coerce_summarize_raw_items(extras.get("raw_evidence"))
+
+        firewalled, leakage_redactions = _apply_summary_firewall(draft)
+        checker = SummaryFidelityChecker(records=evidence_records)
+        result = checker.check(firewalled)
+
+        if leakage_redactions:
+            extra_issues = list(result.issues) + [
+                SummaryValidationIssue(
+                    kind="raw_output_in_field",
+                    message=msg,
+                )
+                for msg in leakage_redactions
+            ]
+            result = result.model_copy(
+                update={
+                    "issues": extra_issues,
+                    "status": "invalid",
+                }
+            )
+
+        admission_decisions, omitted = _deny_summarize_raw_evidence(raw_items)
+        evidence_ids = _collect_summary_evidence_ids(firewalled)
+
+        return SummarizeResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            model_version=FALLBACK_MODEL_VERSION,
+            sidecar_status="ok",
+            status="ok",
+            chunks_built=0,
+            summaries_upserted=0,
+            summary_ids=[firewalled.summary_id],
+            summary=firewalled,
+            validation=result,
+            tokens_saved_vs_raw=_tokens_saved(firewalled.token_cost),
+            warnings=[],
+            validation_results=[result],
+            admission_decisions=admission_decisions,
+            omitted=omitted,
+            evidence_ids_referenced=evidence_ids,
+        )
+    except Exception as exc:
+        logger.warning("summarize firewall error: %s", exc)
+        fallback_issue = SummaryValidationIssue(
+            kind="summarize_error",
+            message=f"summarize firewall error: {exc}",
+        )
+        fallback_result = SummaryValidationResult(
+            summary_id=draft.summary_id,
+            status="invalid",
+            score=0.0,
+            issues=[fallback_issue],
+        )
+        return SummarizeResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            model_version=FALLBACK_MODEL_VERSION,
+            sidecar_status="degraded",
+            status="degraded",
+            chunks_built=0,
+            summaries_upserted=0,
+            summary_ids=[draft.summary_id],
+            summary=draft,
+            validation=fallback_result,
+            tokens_saved_vs_raw=_tokens_saved(draft.token_cost),
+            warnings=[ContextPackWarning(kind="summarize_error", message=str(exc))],
+            validation_results=[fallback_result],
+            admission_decisions=[],
+            omitted=[],
+            evidence_ids_referenced=[],
+        )
+
+
+def _coerce_summarize_raw_items(raw: object) -> list[RawEvidenceItem]:
+    if not isinstance(raw, list):
+        return []
+    items: list[RawEvidenceItem] = []
+    for i, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            continue
+        items.append(
+            RawEvidenceItem(
+                item_id=str(entry.get("item_id", f"raw-{i}")),
+                kind=str(entry.get("kind", "raw_output")),
+                content=str(entry.get("content", "")),
+                source=str(entry["source"]) if entry.get("source") else None,
+            )
+        )
+    return items
+
+
+def _deny_summarize_raw_evidence(
+    raw_items: list[RawEvidenceItem],
+) -> tuple[list[ContextAdmissionDecision], list[OmittedItem]]:
+    decisions: list[ContextAdmissionDecision] = []
+    omitted: list[OmittedItem] = []
+    for raw_item in raw_items:
+        _, reason = evaluate_raw_item(raw_item)
+        decisions.append(
+            ContextAdmissionDecision(
+                schema_version=DEFAULT_SCHEMA_VERSION_V2,
+                decision_id=f"dec-summ-{raw_item.item_id}",
+                item_id=raw_item.item_id,
+                item_kind="raw_tool_log",
+                decision="deny",
+                reason=reason,
+                policy=AdmissionPolicy(raw_evidence_policy=_SUMMARIZE_RAW_POLICY_NAME),
+            )
+        )
+        omitted.append(
+            OmittedItem(
+                kind=raw_item.kind,
+                id=raw_item.item_id,
+                reason=reason,
+            )
+        )
+    return decisions, omitted
+
+
+def _apply_summary_firewall(summary: ActionSummary) -> tuple[ActionSummary, list[str]]:
+    """Redact secrets in every prompt-visible string field of a draft summary.
+
+    Returns the redacted summary and a list of messages describing which fields
+    were redacted (one per affected field), suitable for surfacing as
+    ``raw_output_in_field`` issues alongside the checker's own findings.
+    """
+    redactions: list[str] = []
+
+    def _scrub(value: str | None, where: str) -> str | None:
+        if not value or not has_sensitive_content(value):
+            return value
+        cleaned = sanitize_text_with_report(value).text
+        redactions.append(f"{where} contained raw output / secret / home path; redacted")
+        return cleaned
+
+    new_facts = [
+        fact.model_copy(update={"text": _scrub(fact.text, f"facts[{i}].text") or ""})
+        for i, fact in enumerate(summary.facts)
+    ]
+    new_hypotheses = [
+        hyp.model_copy(update={"text": _scrub(hyp.text, f"hypotheses[{i}].text") or ""})
+        for i, hyp in enumerate(summary.hypotheses)
+    ]
+    new_failed = [
+        fa.model_copy(
+            update={
+                "action": _scrub(fa.action, f"failed_attempts[{i}].action") or "",
+                "outcome": _scrub(fa.outcome, f"failed_attempts[{i}].outcome") or "",
+            }
+        )
+        for i, fa in enumerate(summary.failed_attempts)
+    ]
+    new_avoid = [
+        av.model_copy(
+            update={
+                "action": _scrub(av.action, f"avoid[{i}].action") or "",
+                "reason": _scrub(av.reason, f"avoid[{i}].reason") or "",
+            }
+        )
+        for i, av in enumerate(summary.avoid)
+    ]
+    new_actions_done = [
+        ad.model_copy(
+            update={
+                "target": _scrub(ad.target, f"actions_done[{i}].target"),
+                "command": _scrub(ad.command, f"actions_done[{i}].command"),
+                "outcome": _scrub(ad.outcome, f"actions_done[{i}].outcome") or "",
+            }
+        )
+        for i, ad in enumerate(summary.actions_done)
+    ]
+    new_next_hints = [
+        nh.model_copy(
+            update={
+                "target": _scrub(nh.target, f"next_hints[{i}].target"),
+                "reason": _scrub(nh.reason, f"next_hints[{i}].reason") or "",
+            }
+        )
+        for i, nh in enumerate(summary.next_hints)
+    ]
+    new_validity = summary.validity
+    if summary.validity and summary.validity.reason:
+        cleaned = _scrub(summary.validity.reason, "validity.reason")
+        if cleaned != summary.validity.reason:
+            new_validity = summary.validity.model_copy(update={"reason": cleaned})
+
+    firewalled = summary.model_copy(
+        update={
+            "facts": new_facts,
+            "hypotheses": new_hypotheses,
+            "failed_attempts": new_failed,
+            "avoid": new_avoid,
+            "actions_done": new_actions_done,
+            "next_hints": new_next_hints,
+            "validity": new_validity,
+        }
+    )
+    return firewalled, redactions
+
+
+def _collect_summary_evidence_ids(summary: ActionSummary) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    sources = (
+        summary.facts,
+        summary.hypotheses,
+        summary.failed_attempts,
+        summary.avoid,
+        summary.actions_done,
+    )
+    for group in sources:
+        for item in group:
+            for eid in getattr(item, "evidence_ids", []) or []:
+                if eid and eid not in seen:
+                    seen.add(eid)
+                    ordered.append(eid)
+    return ordered
 
 
 def _extract_raw_items(request: ContextPackRequest) -> list[RawEvidenceItem]:

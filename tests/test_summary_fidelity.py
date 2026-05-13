@@ -302,6 +302,51 @@ def test_hypothesis_as_fact_message_is_prompt_safe() -> None:
 
 
 # ---------------------------------------------------------------------------
+# SummaryFidelityChecker - raw output / secret leakage in prompt-visible fields
+# ---------------------------------------------------------------------------
+
+
+def test_secret_in_fact_text_flags_raw_output_in_field() -> None:
+    records = [_record("ev-001")]
+    checker = SummaryFidelityChecker(records=records)
+    leaky = _fact("API_KEY=abcdefghijklmnop secret was committed", ["ev-001"])
+    result = checker.check(_summary(facts=[leaky]))
+    assert any(iss.kind == "raw_output_in_field" for iss in result.issues)
+    assert result.status == "invalid"
+
+
+def test_home_path_in_failed_attempt_outcome_flags_raw_leakage() -> None:
+    checker = SummaryFidelityChecker()
+    summary = _summary(
+        failed_attempts=[_failed_attempt(action="rg", outcome="no match in /Users/alice/secrets/")],
+    )
+    result = checker.check(summary)
+    assert any(iss.kind == "raw_output_in_field" for iss in result.issues)
+
+
+def test_bearer_token_in_action_command_flags_raw_leakage() -> None:
+    checker = SummaryFidelityChecker()
+    summary = _summary(
+        actions_done=[
+            _action_done(
+                command="curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789'",
+                outcome="success",
+                status="success",
+            )
+        ],
+    )
+    result = checker.check(summary)
+    assert any(iss.kind == "raw_output_in_field" for iss in result.issues)
+
+
+def test_clean_fact_does_not_trigger_raw_leakage() -> None:
+    records = [_record("ev-001")]
+    checker = SummaryFidelityChecker(records=records)
+    result = checker.check(_summary(facts=[_fact("the build succeeded", ["ev-001"])]))
+    assert not any(iss.kind == "raw_output_in_field" for iss in result.issues)
+
+
+# ---------------------------------------------------------------------------
 # SummaryFidelityChecker - failed action misclassification
 # ---------------------------------------------------------------------------
 

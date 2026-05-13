@@ -375,6 +375,152 @@ def test_api_no_raw_evidence_field_is_fine(tmp_path: Path) -> None:
     assert response.json()["sidecar_status"] == "ok"
 
 
+# ---------------------------------------------------------------------------
+# /v1/summarize - Action Context Firewall integration (issue #86)
+# ---------------------------------------------------------------------------
+
+
+def _summarize_payload(
+    *,
+    summary_id: str = "sum-fw-001",
+    facts: list[dict] | None = None,  # type: ignore[type-arg]
+    failed_attempts: list[dict] | None = None,  # type: ignore[type-arg]
+    actions_done: list[dict] | None = None,  # type: ignore[type-arg]
+    raw_evidence: list[dict] | None = None,  # type: ignore[type-arg]
+    evidence_records: list[dict] | None = None,  # type: ignore[type-arg]
+) -> dict:  # type: ignore[type-arg]
+    body: dict = {  # type: ignore[type-arg]
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "req-summ-fw",
+        "draft_summary": {
+            "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+            "summary_id": summary_id,
+            "facts": facts or [],
+            "hypotheses": [],
+            "failed_attempts": failed_attempts or [],
+            "actions_done": actions_done or [],
+        },
+    }
+    if raw_evidence is not None:
+        body["raw_evidence"] = raw_evidence
+    if evidence_records is not None:
+        body["evidence_records"] = evidence_records
+    return body
+
+
+def test_summarize_facts_must_carry_evidence_ids(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    payload = _summarize_payload(
+        facts=[{"text": "the build succeeded", "evidence_ids": []}],
+    )
+    with TestClient(app) as client:
+        response = client.post("/v1/summarize", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    results = data["validation_results"]
+    assert len(results) == 1
+    assert results[0]["status"] == "invalid"
+    assert any(iss["kind"] == "missing_evidence_id" for iss in results[0]["issues"])
+
+
+def test_summarize_redacts_secrets_in_fact_text(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    payload = _summarize_payload(
+        facts=[
+            {
+                "text": "found API_KEY=supersecret123456789secret in config",
+                "evidence_ids": ["ev-001"],
+            }
+        ],
+        evidence_records=[
+            {
+                "evidence_id": "ev-001",
+                "kind": "file_inspection",
+                "summary": "config file contained an API key assignment",
+            }
+        ],
+    )
+    with TestClient(app) as client:
+        response = client.post("/v1/summarize", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    fact_text = data["summary"]["facts"][0]["text"]
+    assert "supersecret123456789secret" not in fact_text
+    assert "API_KEY" not in fact_text or "[REDACTED" in fact_text
+    issues = data["validation_results"][0]["issues"]
+    assert any(iss["kind"] == "raw_output_in_field" for iss in issues)
+    assert data["validation_results"][0]["status"] == "invalid"
+
+
+def test_summarize_denies_raw_evidence_and_records_admission(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    payload = _summarize_payload(
+        facts=[{"text": "build ran", "evidence_ids": ["ev-001"]}],
+        raw_evidence=[
+            {"item_id": "raw-1", "kind": "stdout", "content": "cargo build output line"},
+            {"item_id": "raw-2", "kind": "stderr", "content": "warning: unused var"},
+        ],
+        evidence_records=[{"evidence_id": "ev-001", "kind": "build", "summary": "build ran"}],
+    )
+    with TestClient(app) as client:
+        response = client.post("/v1/summarize", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["admission_decisions"]) == 2
+    for dec in data["admission_decisions"]:
+        assert dec["decision"] == "deny"
+        assert dec["item_kind"] == "raw_tool_log"
+        assert dec["policy"]["raw_evidence_policy"] == "raw_tool_log_default_deny"
+    omitted_ids = {o["id"] for o in data["omitted"]}
+    assert omitted_ids == {"raw-1", "raw-2"}
+    # Raw items must never appear in the prompt-visible firewalled summary
+    serialised = str(data["summary"])
+    assert "cargo build output" not in serialised
+    assert "warning: unused var" not in serialised
+
+
+def test_summarize_evidence_ids_referenced_supports_expand_followup(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    payload = _summarize_payload(
+        facts=[
+            {"text": "build ran", "evidence_ids": ["ev-001"]},
+            {"text": "tests passed", "evidence_ids": ["ev-002", "ev-001"]},
+        ],
+        evidence_records=[
+            {"evidence_id": "ev-001", "kind": "build", "summary": "build ran"},
+            {"evidence_id": "ev-002", "kind": "test", "summary": "tests passed"},
+        ],
+    )
+    with TestClient(app) as client:
+        response = client.post("/v1/summarize", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    # Evidence IDs are deduplicated and preserved in encounter order
+    assert data["evidence_ids_referenced"] == ["ev-001", "ev-002"]
+
+
+def test_summarize_clean_summary_returns_valid_status(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    payload = _summarize_payload(
+        facts=[{"text": "the build succeeded", "evidence_ids": ["ev-001"]}],
+        evidence_records=[
+            {
+                "evidence_id": "ev-001",
+                "kind": "build",
+                "summary": "build succeeded",
+                "content": "the build succeeded with no warnings",
+            }
+        ],
+    )
+    with TestClient(app) as client:
+        response = client.post("/v1/summarize", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["validation_results"][0]["status"] == "valid"
+    assert data["admission_decisions"] == []
+    assert data["omitted"] == []
+
+
 def test_api_secret_in_raw_evidence_is_denied(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
     raw_evidence = [

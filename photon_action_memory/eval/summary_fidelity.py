@@ -11,6 +11,7 @@ from photon_action_memory.api.schema_v2 import (
     SummaryValidationIssue,
     SummaryValidationResult,
 )
+from photon_action_memory.context.raw_policy import has_sensitive_content
 
 _UNCERTAINTY_KEYWORDS: tuple[str, ...] = (
     "appears",
@@ -37,6 +38,7 @@ _BLOCKING_KINDS: frozenset[str] = frozenset(
         "missing_evidence_id",
         "ungrounded_fact",
         "failed_action_misclassified",
+        "raw_output_in_field",
     }
 )
 _TEXT_FIELDS: tuple[str, ...] = ("content", "text", "message", "output", "body")
@@ -96,6 +98,7 @@ class SummaryFidelityChecker:
         issues: list[SummaryValidationIssue] = []
         self._check_facts(summary, issues)
         self._check_actions_done(summary, issues)
+        self._check_raw_leakage(summary, issues)
         score = self._compute_score(summary, issues)
         status = self._compute_status(issues)
         return SummaryValidationResult(
@@ -204,6 +207,86 @@ class SummaryFidelityChecker:
                                 )
                             )
                             break
+
+    def _check_raw_leakage(
+        self, summary: ActionSummary, issues: list[SummaryValidationIssue]
+    ) -> None:
+        """Flag prompt-visible fields that contain raw stdout/stderr/secret/path leakage."""
+        for i, fact in enumerate(summary.facts):
+            if has_sensitive_content(fact.text):
+                issues.append(
+                    SummaryValidationIssue(
+                        kind="raw_output_in_field",
+                        message=f"facts[{i}].text contains raw output / secret / home path",
+                    )
+                )
+        for i, hyp in enumerate(summary.hypotheses):
+            if has_sensitive_content(hyp.text):
+                issues.append(
+                    SummaryValidationIssue(
+                        kind="raw_output_in_field",
+                        message=f"hypotheses[{i}].text contains raw output / secret / home path",
+                    )
+                )
+        for i, fa in enumerate(summary.failed_attempts):
+            for field_name in ("action", "outcome"):
+                value = getattr(fa, field_name, "") or ""
+                if has_sensitive_content(value):
+                    issues.append(
+                        SummaryValidationIssue(
+                            kind="raw_output_in_field",
+                            message=(
+                                f"failed_attempts[{i}].{field_name}"
+                                " contains raw output / secret / home path"
+                            ),
+                        )
+                    )
+        for i, av in enumerate(summary.avoid):
+            for field_name in ("action", "reason"):
+                value = getattr(av, field_name, "") or ""
+                if has_sensitive_content(value):
+                    issues.append(
+                        SummaryValidationIssue(
+                            kind="raw_output_in_field",
+                            message=(
+                                f"avoid[{i}].{field_name} contains raw output / secret / home path"
+                            ),
+                        )
+                    )
+        for i, ad in enumerate(summary.actions_done):
+            for field_name in ("target", "command", "outcome"):
+                value = getattr(ad, field_name, "") or ""
+                if has_sensitive_content(value):
+                    issues.append(
+                        SummaryValidationIssue(
+                            kind="raw_output_in_field",
+                            message=(
+                                f"actions_done[{i}].{field_name}"
+                                " contains raw output / secret / home path"
+                            ),
+                        )
+                    )
+        for i, nh in enumerate(summary.next_hints):
+            for field_name in ("target", "reason"):
+                value = getattr(nh, field_name, "") or ""
+                if has_sensitive_content(value):
+                    issues.append(
+                        SummaryValidationIssue(
+                            kind="raw_output_in_field",
+                            message=(
+                                f"next_hints[{i}].{field_name}"
+                                " contains raw output / secret / home path"
+                            ),
+                        )
+                    )
+        if summary.validity and summary.validity.reason:
+            if has_sensitive_content(summary.validity.reason):
+                issues.append(
+                    SummaryValidationIssue(
+                        kind="raw_output_in_field",
+                        message="validity.reason contains raw output / secret / home path",
+                    )
+                )
 
     def _compute_score(self, summary: ActionSummary, issues: list[SummaryValidationIssue]) -> float:
         n_total = max(
