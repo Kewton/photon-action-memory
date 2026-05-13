@@ -65,7 +65,8 @@ export ANVIL_PHOTON_CANARY=true
 | Endpoint | Anvil call timing | Expected behavior |
 |---|---|---|
 | `GET /health` | Startup and diagnostics | Returns sidecar health. |
-| `POST /v1/summary/upsert` | After Anvil summarizes useful turn history | Stores `ActionSummary` for later retrieval. |
+| `POST /v1/summarize` | At a turn boundary, after chunks are assembled (v0.4.0 P1+) | Generates `ActionSummary` from the supplied `chunk_ids`. |
+| `POST /v1/summary/upsert` | After `/v1/summarize` returns, or when Anvil already has a summary to persist | Stores `ActionSummary` for later retrieval. |
 | `POST /v1/context/pack` | Before prompt assembly | Returns admitted memory items and denial decisions. |
 | `POST /v1/evidence/expand` | Optional, after context pack selection | Expands selected evidence only; raw output remains denied in Anvil profile. |
 | `POST /v1/evaluate` | After every turn | Logs adoption status, outcome, and rollout signals. |
@@ -73,7 +74,40 @@ export ANVIL_PHOTON_CANARY=true
 Required sequence for a turn:
 
 ```text
-context_pack -> optional evidence_expand -> evaluate
+(optional) summarize -> summary/upsert -> context_pack
+                       -> optional evidence_expand -> evaluate
+```
+
+`/v1/summarize` is new in v0.4.0 P1. Until P1 ships, Anvil should skip the
+summarize step and continue from `/v1/summary/upsert` with the existing
+summary builder; the smoke runner in this repo
+(`scripts/anvil_v1_summarize_smoke.py`) records `status=summarize_stub`
+when the sidecar returns 501.
+
+### `/v1/summarize` Anvil-side request fields
+
+| Field | Required | Meaning |
+|---|---|---|
+| `schema_version` | yes | `action-memory.v0.2`. |
+| `request_id` | yes | UUID/short hash that Anvil also logs as `last_summarize_id`. |
+| `session_id` | yes | Stable per Anvil agent session. |
+| `chunk_ids` | yes | The chunk IDs produced by Anvil's chunker for this turn. |
+| `summary_level` | yes | `chunk` / `turn` / `session`. Use `chunk` per turn. |
+| `policy.require_evidence_ids` | yes | Should remain `true` for Anvil; facts without evidence_ids are dropped. |
+| `policy.separate_fact_and_hypothesis` | yes | Should remain `true` to keep hypothesis-as-fact pollution out of the prompt. |
+| `policy.include_failed_attempts` | yes | Should remain `true` so `failed_attempts` reaches the next turn. |
+| `policy.include_avoid_guidance` | yes | Should remain `true` so `avoid` reaches the next turn. |
+
+### `/v1/summarize` timing
+
+```text
+turn boundary
+  └─ Anvil builds chunks from the turn's events
+     └─ POST /v1/summarize
+        └─ POST /v1/summary/upsert (with the returned summary)
+           └─ POST /v1/context/pack (before assembling the next prompt)
+              └─ optional POST /v1/evidence/expand
+                 └─ POST /v1/evaluate
 ```
 
 `evaluate` remains required even in shadow mode because rollout metrics depend

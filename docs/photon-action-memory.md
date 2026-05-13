@@ -107,6 +107,55 @@ Expected checks:
 - `logged` is `1`.
 - The stored event has `adoption_status=shadow_not_injected`.
 
+### Summarize (v0.4.0 P1 / P2)
+
+`/v1/summarize` produces an `ActionSummary` from buffered chunks. It is the
+M2 stub (HTTP 501) until v0.4.0 P1 (Issue #86) lands. The integration smoke
+expects the v0.4.0 contract and is reproducible today with a graceful 501
+fallback that uses a fixture in place of the live response.
+
+Request envelope:
+
+```json
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "smoke-summarize-<short>",
+  "session_id": "anvil-smoke-<scenario>-001",
+  "chunk_ids": ["anvil-eval-<scenario>-chunk-001"],
+  "summary_level": "chunk",
+  "policy": {
+    "require_evidence_ids": true,
+    "separate_fact_and_hypothesis": true,
+    "include_failed_attempts": true,
+    "include_avoid_guidance": true
+  }
+}
+```
+
+Expected response (post-P1):
+
+```json
+{
+  "schema_version": "action-memory.v0.2",
+  "request_id": "smoke-summarize-<short>",
+  "summary": { "summary_id": "<id>", "...": "..." },
+  "validation": { "status": "valid", "score": 0.94 }
+}
+```
+
+End-to-end smoke runner:
+
+```bash
+python3 scripts/anvil_v1_summarize_smoke.py --scenario S3-01
+```
+
+The runner drives the full turn lifecycle against `127.0.0.1:18765`:
+`summarize → summary/upsert → context/pack → evidence/expand → evaluate`.
+If `/v1/summarize` is the 501 stub, the runner records
+`status=summarize_stub` and continues from `/v1/summary/upsert`. Pass
+`--scenario` multiple times to run a subset; omit it to run all three
+beta-gamma-light scenarios (S2-03, S3-01, S5-01).
+
 ### Summary Upsert
 
 `/v1/summary/upsert` wraps an `ActionSummary` fixture in a request envelope:
