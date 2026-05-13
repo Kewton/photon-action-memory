@@ -7,8 +7,10 @@ from fastapi.testclient import TestClient
 
 from photon_action_memory import SCHEMA_VERSION
 from photon_action_memory.api.client import SidecarClient
+from photon_action_memory.api.schema_v2 import DEFAULT_SCHEMA_VERSION_V2
 from photon_action_memory.api.server import create_app
 from photon_action_memory.memory.store import SQLiteEventStore
+from photon_action_memory.memory.summary_store import SummaryStore
 
 
 def test_health_check_succeeds(tmp_path: Path) -> None:
@@ -96,6 +98,50 @@ def test_suggest_returns_no_model_fallback(tmp_path: Path) -> None:
     ]
 
 
+def _summarize_request(
+    *,
+    request_id: str,
+    session_id: str | None = None,
+    repo_id: str | None = None,
+    task_signature: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": request_id,
+    }
+    if session_id is not None:
+        payload["session_id"] = session_id
+    if repo_id is not None:
+        payload["repo_id"] = repo_id
+    if task_signature is not None:
+        payload["task_signature"] = task_signature
+    return payload
+
+
+def _seed_event(
+    *,
+    event_id: str,
+    session_id: str = "session-summarize-1",
+    turn_id: str = "turn-summarize-1",
+    repo_id: str = "repo-summarize-1",
+    event_type: str = "file_read",
+    summary: str = "read photon_action_memory/api/server.py",
+    outcome: str = "useful",
+) -> dict[str, object]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "event_id": event_id,
+        "event_type": event_type,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "repo_id": repo_id,
+        "timestamp": "2026-04-30T12:00:00+00:00",
+        "summary": summary,
+        "outcome": outcome,
+        "redaction_status": "clean",
+    }
+
+
 def test_summarize_empty_payload_returns_422(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
 
@@ -105,26 +151,23 @@ def test_summarize_empty_payload_returns_422(tmp_path: Path) -> None:
     assert summarize_response.status_code == 422
 
 
-def test_summarize_minimum_valid_payload_returns_not_implemented_envelope(
-    tmp_path: Path,
-) -> None:
+def test_summarize_returns_ok_for_empty_store(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
-    payload = {
-        "schema_version": "action-memory.v0.2",
-        "request_id": "summarize-001",
-    }
 
     with TestClient(app) as client:
-        response = client.post("/v1/summarize", json=payload)
+        response = client.post(
+            "/v1/summarize",
+            json=_summarize_request(request_id="sum-empty-1"),
+        )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["schema_version"] == "action-memory.v0.2"
-    assert body["request_id"] == "summarize-001"
-    assert body["sidecar_status"] == "not_implemented"
-    assert body["summary"] is None
-    assert body["validation"] is None
-    assert body["warnings"][0]["kind"] == "not_implemented"
+    data = response.json()
+    assert data["sidecar_status"] == "ok"
+    assert data["status"] == "ok"
+    assert data["chunks_built"] == 0
+    assert data["summaries_upserted"] == 0
+    assert data["summary_ids"] == []
+    assert data["summary"] is None
 
 
 def test_summarize_full_anvil_turn_payload_validates(tmp_path: Path) -> None:
@@ -152,7 +195,169 @@ def test_summarize_full_anvil_turn_payload_validates(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["request_id"] == "summarize-turn-007"
-    assert body["sidecar_status"] == "not_implemented"
+    assert body["sidecar_status"] == "ok"
+    assert body["status"] == "ok"
+    assert body["summary_ids"] == []
+    assert body["summary"] is None
+
+
+def test_summarize_builds_and_persists_summary(tmp_path: Path) -> None:
+    event_store = SQLiteEventStore(tmp_path / "events.sqlite")
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    app = create_app(event_store, summary_store)
+
+    events = [
+        _seed_event(event_id="evt-sum-a", repo_id="repo-A"),
+        _seed_event(event_id="evt-sum-b", repo_id="repo-A"),
+    ]
+    with TestClient(app) as client:
+        ingest = client.post(
+            "/v1/events",
+            json={
+                "schema_version": SCHEMA_VERSION,
+                "request_id": "req-ingest-1",
+                "events": events,
+            },
+        )
+        assert ingest.status_code == 200
+
+        response = client.post(
+            "/v1/summarize",
+            json=_summarize_request(
+                request_id="sum-build-1",
+                repo_id="repo-A",
+                task_signature="task-A",
+            ),
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["sidecar_status"] == "ok"
+    assert data["status"] == "ok"
+    assert data["chunks_built"] == 1
+    assert data["summaries_upserted"] == 1
+    assert data["summary"] is not None
+    assert summary_store.count() == 1
+    summary = summary_store.get(data["summary_ids"][0])
+    assert summary is not None
+    assert summary.repo_id == "repo-A"
+    assert summary.task_signature == "task-A"
+    assert set(summary.source_chunk_ids)  # at least one chunk recorded
+    assert any("evt-sum-a" in done.evidence_ids for done in summary.actions_done)
+
+
+def test_summarize_then_context_pack_returns_summary(tmp_path: Path) -> None:
+    event_store = SQLiteEventStore(tmp_path / "events.sqlite")
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    app = create_app(event_store, summary_store)
+
+    events = [
+        _seed_event(event_id="evt-pack-a", repo_id="repo-pack"),
+        _seed_event(event_id="evt-pack-b", repo_id="repo-pack"),
+    ]
+    with TestClient(app) as client:
+        client.post(
+            "/v1/events",
+            json={
+                "schema_version": SCHEMA_VERSION,
+                "request_id": "req-pack-ingest",
+                "events": events,
+            },
+        )
+        sum_resp = client.post(
+            "/v1/summarize",
+            json=_summarize_request(request_id="sum-pack-1", repo_id="repo-pack"),
+        )
+        assert sum_resp.status_code == 200
+        new_summary_id = sum_resp.json()["summary_ids"][0]
+
+        pack_resp = client.post(
+            "/v1/context/pack",
+            json={
+                "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+                "request_id": "pack-after-summarize-1",
+                "agent": {"name": "codex"},
+                "repo": {"root": str(tmp_path), "name": "repo-pack"},
+                "task": {
+                    "user_request": "inspect server",
+                    "mode": "act",
+                    "summary": "inspect",
+                },
+                "working_memory": {"touched_files": []},
+                "recent_event_ids": [],
+                "candidate_summary_ids": [],
+                "budget": {"max_memory_tokens": 800, "max_evidence_chars": 1200},
+            },
+        )
+
+    assert pack_resp.status_code == 200
+    data = pack_resp.json()
+    item_ids = {item["id"] for item in data["context_pack"]["items"]}
+    assert new_summary_id in item_ids
+
+
+def test_summarize_is_idempotent_across_repeat_calls(tmp_path: Path) -> None:
+    event_store = SQLiteEventStore(tmp_path / "events.sqlite")
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    app = create_app(event_store, summary_store)
+
+    events = [
+        _seed_event(event_id="evt-idem-a"),
+        _seed_event(event_id="evt-idem-b"),
+    ]
+    with TestClient(app) as client:
+        client.post(
+            "/v1/events",
+            json={
+                "schema_version": SCHEMA_VERSION,
+                "request_id": "req-idem-ingest",
+                "events": events,
+            },
+        )
+        first = client.post(
+            "/v1/summarize",
+            json=_summarize_request(request_id="sum-idem-1"),
+        )
+        second = client.post(
+            "/v1/summarize",
+            json=_summarize_request(request_id="sum-idem-2"),
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["summary_ids"] == second.json()["summary_ids"]
+    assert summary_store.count() == first.json()["summaries_upserted"]
+
+
+def test_summarize_filters_by_session_id(tmp_path: Path) -> None:
+    event_store = SQLiteEventStore(tmp_path / "events.sqlite")
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    app = create_app(event_store, summary_store)
+
+    events = [
+        _seed_event(event_id="evt-sess-a", session_id="sess-A", turn_id="turn-A"),
+        _seed_event(event_id="evt-sess-b", session_id="sess-B", turn_id="turn-B"),
+    ]
+    with TestClient(app) as client:
+        client.post(
+            "/v1/events",
+            json={
+                "schema_version": SCHEMA_VERSION,
+                "request_id": "req-sess-ingest",
+                "events": events,
+            },
+        )
+        response = client.post(
+            "/v1/summarize",
+            json=_summarize_request(request_id="sum-sess-1", session_id="sess-A"),
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["summaries_upserted"] == 1
+    only_summary = summary_store.get(data["summary_ids"][0])
+    assert only_summary is not None
+    assert only_summary.session_id == "sess-A"
 
 
 def test_evaluate_returns_ok_for_valid_request(tmp_path: Path) -> None:
