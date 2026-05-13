@@ -169,6 +169,7 @@ def create_app(
                 warnings=route_warnings,
                 raw_items=raw_items,
                 summary_feedback=feedback_map,
+                task_text=_context_task_text(request),
             )
             sidecar_status = "degraded" if route_warnings else "ok"
         except Exception as exc:
@@ -775,6 +776,14 @@ def _context_task_signature(request: ContextPackRequest) -> str | None:
         return None
     task_signature = str(raw).strip()
     return task_signature or None
+
+
+def _context_task_text(request: ContextPackRequest) -> str:
+    """Return task text used by task-aware ContextPack quality gates."""
+    parts = [request.task.user_request]
+    if request.task.summary:
+        parts.append(request.task.summary)
+    return "\n".join(part for part in parts if part)
 
 
 def build_fallback_suggestions(request: SuggestRequest) -> SuggestResponse:
