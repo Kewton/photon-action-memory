@@ -437,7 +437,7 @@ class SummaryValidateResponse(SidecarModel):
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/summarize (Issue #82 contract + Issue #83/#84 pipelines)
+# POST /v1/summarize (Issue #82 contract + Issue #83/#84/#86 pipelines)
 # ---------------------------------------------------------------------------
 
 
@@ -461,12 +461,9 @@ class SummarizePolicy(SidecarModel):
 class SummarizeRequest(SidecarModel):
     """Request body for POST /v1/summarize.
 
-    Anvil sends this at the end of a turn (or session) together with the
-    chunk_ids / recent_event_ids that should be folded into the summary.
-    Reuses ``AgentInfo`` / ``RepoInfo`` / ``TaskState`` from the v1 schema
-    so the request stays consistent with ``/v1/context/pack``. Callers can
-    either reference stored events or provide inline ``ActionChunk`` objects
-    for hierarchical turn/session/case summaries.
+    Callers can summarize stored events, fold inline ``ActionChunk`` objects
+    into hierarchical summaries, or submit a prebuilt ``draft_summary`` for
+    Action Context Firewall checks before prompt-visible reuse.
     """
 
     schema_version: SchemaVersionV2
@@ -485,16 +482,11 @@ class SummarizeRequest(SidecarModel):
     chunks: list[ActionChunk] = Field(default_factory=list)
     summary_id: str | None = None
     policy: SummarizePolicy = Field(default_factory=SummarizePolicy)
+    draft_summary: ActionSummary | None = None
 
 
 class SummarizeResponse(SidecarModel):
-    """Response body for POST /v1/summarize.
-
-    The generated ``ActionSummary`` is returned inline so callers can pipe it
-    straight into ``/v1/summary/upsert`` or ``/v1/summary/validate``. Pipeline
-    counters expose how many ActionChunks were built and how many summaries
-    were persisted for the request.
-    """
+    """Response body for POST /v1/summarize."""
 
     schema_version: SchemaVersionV2
     request_id: str
@@ -508,6 +500,10 @@ class SummarizeResponse(SidecarModel):
     validation: SummaryValidationResult | None = None
     tokens_saved_vs_raw: int = Field(default=0, ge=0)
     warnings: list[ContextPackWarning] = Field(default_factory=list)
+    validation_results: list[SummaryValidationResult] = Field(default_factory=list)
+    admission_decisions: list[ContextAdmissionDecision] = Field(default_factory=list)
+    omitted: list[OmittedItem] = Field(default_factory=list)
+    evidence_ids_referenced: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -608,9 +604,9 @@ __all__ = [
     "StalenessStatus",
     "StalenessStatusKind",
     "SummarizePolicy",
+    "SummaryLevel",
     "SummarizeRequest",
     "SummarizeResponse",
-    "SummaryLevel",
     "SummaryValidateRequest",
     "SummaryValidateResponse",
     "SummaryValidationIssue",
