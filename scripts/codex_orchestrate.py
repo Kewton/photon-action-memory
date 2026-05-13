@@ -2023,8 +2023,10 @@ def main() -> int:
             render_worker_wait_report(wait_results),
             encoding="utf-8",
         )
-        can_publish = can_publish and bool(wait_results) and all(
-            result.status == "completed" for result in wait_results
+        can_publish = (
+            can_publish
+            and bool(wait_results)
+            and all(result.status == "completed" for result in wait_results)
         )
 
     pr_results: list[PullRequestResult] = []

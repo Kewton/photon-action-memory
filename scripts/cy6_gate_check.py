@@ -4,6 +4,7 @@
 The script reads Anvil session logs and reports only aggregate gate metrics.
 It does not print raw prompts, tool output, or user text.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -184,68 +185,79 @@ def build_gate_report(
     gates = []
 
     ok = stats["photon_eval_turns"] >= min_eval_turns
-    gates.append({
-        "id": "CY6-1",
-        "label": "minimum eval turns",
-        "value": f"{stats['photon_eval_turns']}/{min_eval_turns}",
-        **_status(ok, None if ok else "not enough photon_eval turns"),
-    })
+    gates.append(
+        {
+            "id": "CY6-1",
+            "label": "minimum eval turns",
+            "value": f"{stats['photon_eval_turns']}/{min_eval_turns}",
+            **_status(ok, None if ok else "not enough photon_eval turns"),
+        }
+    )
 
     ok = fail_open_rate <= max_fail_open_rate
-    gates.append({
-        "id": "CY6-2",
-        "label": "fail-open incident rate",
-        "value": fail_open_rate,
-        **_status(ok, None if ok else f"fail_open_rate>{max_fail_open_rate}"),
-    })
+    gates.append(
+        {
+            "id": "CY6-2",
+            "label": "fail-open incident rate",
+            "value": fail_open_rate,
+            **_status(ok, None if ok else f"fail_open_rate>{max_fail_open_rate}"),
+        }
+    )
 
     ok = raw_signal == 0
-    gates.append({
-        "id": "CY6-3",
-        "label": "raw token / marker leakage",
-        "value": raw_signal,
-        **_status(ok, None if ok else "raw prompt marker detected"),
-    })
+    gates.append(
+        {
+            "id": "CY6-3",
+            "label": "raw token / marker leakage",
+            "value": raw_signal,
+            **_status(ok, None if ok else "raw prompt marker detected"),
+        }
+    )
 
     ok = stats["max_injected_bytes"] <= max_prompt_bytes and stats["prompt_truncated_events"] == 0
-    gates.append({
-        "id": "CY6-4",
-        "label": "prompt size",
-        "value": {
-            "max_injected_bytes": stats["max_injected_bytes"],
-            "prompt_truncated_events": stats["prompt_truncated_events"],
-        },
-        **_status(ok, None if ok else "prompt size exceeded or truncation observed"),
-    })
+    gates.append(
+        {
+            "id": "CY6-4",
+            "label": "prompt size",
+            "value": {
+                "max_injected_bytes": stats["max_injected_bytes"],
+                "prompt_truncated_events": stats["prompt_truncated_events"],
+            },
+            **_status(ok, None if ok else "prompt size exceeded or truncation observed"),
+        }
+    )
 
     enough_groups = (
-        stats["sampled_total"] >= min_group_turns
-        and stats["unsampled_total"] >= min_group_turns
+        stats["sampled_total"] >= min_group_turns and stats["unsampled_total"] >= min_group_turns
     )
     if not enough_groups:
-        gates.append({
-            "id": "CY6-5",
-            "label": "success-rate regression",
-            "status": "manual",
-            "value": {
-                "sampled_total": stats["sampled_total"],
-                "unsampled_total": stats["unsampled_total"],
-            },
-            "reason": f"need at least {min_group_turns} turns in each group",
-        })
+        gates.append(
+            {
+                "id": "CY6-5",
+                "label": "success-rate regression",
+                "status": "manual",
+                "value": {
+                    "sampled_total": stats["sampled_total"],
+                    "unsampled_total": stats["unsampled_total"],
+                },
+                "reason": f"need at least {min_group_turns} turns in each group",
+            }
+        )
     else:
         ok = success_delta_pp is not None and success_delta_pp >= -max_success_regression_pp
-        gates.append({
-            "id": "CY6-5",
-            "label": "success-rate regression",
-            "status": "ok" if ok else "ng",
-            "value": {
-                "sampled_success_rate": sampled_rate,
-                "unsampled_success_rate": unsampled_rate,
-                "delta_pp": success_delta_pp,
-            },
-            "reason": None if ok else f"delta_pp < -{max_success_regression_pp}",
-        })
+        gates.append(
+            {
+                "id": "CY6-5",
+                "label": "success-rate regression",
+                "status": "ok" if ok else "ng",
+                "value": {
+                    "sampled_success_rate": sampled_rate,
+                    "unsampled_success_rate": unsampled_rate,
+                    "delta_pp": success_delta_pp,
+                },
+                "reason": None if ok else f"delta_pp < -{max_success_regression_pp}",
+            }
+        )
 
     ready = all(g["status"] == "ok" for g in gates)
     return {
