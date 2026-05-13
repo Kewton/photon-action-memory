@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
 from photon_action_memory.api.schema_v2 import ActionSummary
+from photon_action_memory.eval.summary_feedback import (
+    SummaryFeedbackRecord,
+    classify_outcome,
+    is_adopted,
+)
 
 
 class SummaryStore:
@@ -119,6 +125,110 @@ class SummaryStore:
         row = self._connection.execute("SELECT COUNT(*) AS cnt FROM action_summaries").fetchone()
         return int(row["cnt"])
 
+    def record_outcomes(
+        self,
+        summary_ids: Iterable[str],
+        *,
+        adoption_status: str,
+        outcome: str | None,
+        evidence_expand_requested: bool = False,
+    ) -> int:
+        """Update per-summary feedback counters from a single /v1/evaluate record.
+
+        Returns the number of rows touched. Excluded statuses (``error``,
+        ``not_available``, ``shadow_not_injected``) and empty ``summary_ids``
+        are no-ops. ``adoption_count`` increments only when the record's
+        status counts as adoption (``adopted`` / ``partial``).
+        """
+        is_quality, classification = classify_outcome(adoption_status, outcome)
+        if not is_quality:
+            return 0
+
+        ids = [sid for sid in summary_ids if sid]
+        if not ids:
+            return 0
+
+        success_inc = 1 if classification == "success" else 0
+        failure_inc = 1 if classification == "failure" else 0
+        safety_inc = 1 if classification == "safety" else 0
+        adoption_inc = 1 if is_adopted(adoption_status) else 0
+        expand_inc = 1 if evidence_expand_requested else 0
+        now = datetime.now(UTC).isoformat(timespec="microseconds")
+
+        rows_touched = 0
+        with self._connection:
+            for sid in ids:
+                self._connection.execute(
+                    """
+                    INSERT INTO summary_feedback (
+                        summary_id, adoption_count, success_count, failure_count,
+                        safety_violation_count, expand_request_count, quality_turns,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                    ON CONFLICT(summary_id) DO UPDATE SET
+                        adoption_count         = adoption_count         + ?,
+                        success_count          = success_count          + ?,
+                        failure_count          = failure_count          + ?,
+                        safety_violation_count = safety_violation_count + ?,
+                        expand_request_count   = expand_request_count   + ?,
+                        quality_turns          = quality_turns          + 1,
+                        updated_at             = ?
+                    """,
+                    (
+                        sid,
+                        adoption_inc,
+                        success_inc,
+                        failure_inc,
+                        safety_inc,
+                        expand_inc,
+                        now,
+                        adoption_inc,
+                        success_inc,
+                        failure_inc,
+                        safety_inc,
+                        expand_inc,
+                        now,
+                    ),
+                )
+                rows_touched += 1
+        return rows_touched
+
+    def get_feedback(self, summary_id: str) -> SummaryFeedbackRecord | None:
+        row = self._connection.execute(
+            """
+            SELECT summary_id, adoption_count, success_count, failure_count,
+                   safety_violation_count, expand_request_count, quality_turns
+            FROM summary_feedback WHERE summary_id = ?
+            """,
+            (summary_id,),
+        ).fetchone()
+        return _row_to_feedback(row)
+
+    def get_feedback_map(
+        self,
+        summary_ids: Iterable[str],
+    ) -> dict[str, SummaryFeedbackRecord]:
+        """Return feedback records keyed by summary_id; missing IDs are omitted."""
+        ids = [sid for sid in summary_ids if sid]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" * len(ids))
+        rows = self._connection.execute(
+            f"""
+            SELECT summary_id, adoption_count, success_count, failure_count,
+                   safety_violation_count, expand_request_count, quality_turns
+            FROM summary_feedback WHERE summary_id IN ({placeholders})
+            """,
+            ids,
+        ).fetchall()
+        result: dict[str, SummaryFeedbackRecord] = {}
+        for row in rows:
+            record = _row_to_feedback(row)
+            if record is not None:
+                result[record.summary_id] = record
+        return result
+
     def _initialize_schema(self) -> None:
         with self._connection:
             self._connection.executescript(
@@ -140,8 +250,32 @@ class SummaryStore:
                     ON action_summaries (task_signature);
                 CREATE INDEX IF NOT EXISTS idx_summaries_validity
                     ON action_summaries (validity_status);
+                CREATE TABLE IF NOT EXISTS summary_feedback (
+                    summary_id              TEXT PRIMARY KEY,
+                    adoption_count          INTEGER NOT NULL DEFAULT 0,
+                    success_count           INTEGER NOT NULL DEFAULT 0,
+                    failure_count           INTEGER NOT NULL DEFAULT 0,
+                    safety_violation_count  INTEGER NOT NULL DEFAULT 0,
+                    expand_request_count    INTEGER NOT NULL DEFAULT 0,
+                    quality_turns           INTEGER NOT NULL DEFAULT 0,
+                    updated_at              TEXT NOT NULL
+                );
                 """
             )
+
+
+def _row_to_feedback(row: sqlite3.Row | None) -> SummaryFeedbackRecord | None:
+    if row is None:
+        return None
+    return SummaryFeedbackRecord(
+        summary_id=row["summary_id"],
+        adoption_count=int(row["adoption_count"]),
+        success_count=int(row["success_count"]),
+        failure_count=int(row["failure_count"]),
+        safety_violation_count=int(row["safety_violation_count"]),
+        expand_request_count=int(row["expand_request_count"]),
+        quality_turns=int(row["quality_turns"]),
+    )
 
 
 __all__ = ["SummaryStore"]
