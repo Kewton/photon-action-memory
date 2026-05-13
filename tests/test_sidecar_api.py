@@ -96,13 +96,63 @@ def test_suggest_returns_no_model_fallback(tmp_path: Path) -> None:
     ]
 
 
-def test_summarize_is_m2_stub(tmp_path: Path) -> None:
+def test_summarize_empty_payload_returns_422(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
 
     with TestClient(app) as client:
         summarize_response = client.post("/v1/summarize", json={})
 
-    assert summarize_response.status_code == 501
+    assert summarize_response.status_code == 422
+
+
+def test_summarize_minimum_valid_payload_returns_not_implemented_envelope(
+    tmp_path: Path,
+) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    payload = {
+        "schema_version": "action-memory.v0.2",
+        "request_id": "summarize-001",
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/v1/summarize", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "action-memory.v0.2"
+    assert body["request_id"] == "summarize-001"
+    assert body["sidecar_status"] == "not_implemented"
+    assert body["summary"] is None
+    assert body["validation"] is None
+    assert body["warnings"][0]["kind"] == "not_implemented"
+
+
+def test_summarize_full_anvil_turn_payload_validates(tmp_path: Path) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+    payload = {
+        "schema_version": "action-memory.v0.2",
+        "request_id": "summarize-turn-007",
+        "session_id": "sess-1",
+        "turn_id": "turn-7",
+        "agent": {"name": "anvil", "version": "0.4.0-rc1"},
+        "repo": {"root": str(tmp_path), "name": "demo"},
+        "task": {"user_request": "fix session test", "mode": "act"},
+        "summary_level": "turn",
+        "chunk_ids": ["chunk_017", "chunk_018"],
+        "recent_event_ids": ["evt_041", "evt_052"],
+        "policy": {
+            "require_evidence_ids": True,
+            "max_facts": 8,
+        },
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/v1/summarize", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request_id"] == "summarize-turn-007"
+    assert body["sidecar_status"] == "not_implemented"
 
 
 def test_evaluate_returns_ok_for_valid_request(tmp_path: Path) -> None:
