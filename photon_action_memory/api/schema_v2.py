@@ -437,7 +437,7 @@ class SummaryValidateResponse(SidecarModel):
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/summarize (Issue #82 contract + Issue #83 pipeline)
+# POST /v1/summarize (Issue #82 contract + Issue #83/#84 pipelines)
 # ---------------------------------------------------------------------------
 
 
@@ -464,7 +464,9 @@ class SummarizeRequest(SidecarModel):
     Anvil sends this at the end of a turn (or session) together with the
     chunk_ids / recent_event_ids that should be folded into the summary.
     Reuses ``AgentInfo`` / ``RepoInfo`` / ``TaskState`` from the v1 schema
-    so the request stays consistent with ``/v1/context/pack``.
+    so the request stays consistent with ``/v1/context/pack``. Callers can
+    either reference stored events or provide inline ``ActionChunk`` objects
+    for hierarchical turn/session/case summaries.
     """
 
     schema_version: SchemaVersionV2
@@ -480,6 +482,8 @@ class SummarizeRequest(SidecarModel):
     chunk_ids: list[str] = Field(default_factory=list)
     recent_event_ids: list[str] = Field(default_factory=list)
     parent_summary_ids: list[str] = Field(default_factory=list)
+    chunks: list[ActionChunk] = Field(default_factory=list)
+    summary_id: str | None = None
     policy: SummarizePolicy = Field(default_factory=SummarizePolicy)
 
 
@@ -502,6 +506,7 @@ class SummarizeResponse(SidecarModel):
     summary_ids: list[str] = Field(default_factory=list)
     summary: ActionSummary | None = None
     validation: SummaryValidationResult | None = None
+    tokens_saved_vs_raw: int = Field(default=0, ge=0)
     warnings: list[ContextPackWarning] = Field(default_factory=list)
 
 

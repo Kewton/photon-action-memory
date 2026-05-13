@@ -151,6 +151,29 @@ def test_summarize_empty_payload_returns_422(tmp_path: Path) -> None:
     assert summarize_response.status_code == 422
 
 
+def test_summarize_rejects_explicit_empty_chunks_with_degraded_status(
+    tmp_path: Path,
+) -> None:
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
+
+    with TestClient(app) as client:
+        summarize_response = client.post(
+            "/v1/summarize",
+            json={
+                "schema_version": "action-memory.v0.2",
+                "request_id": "req-summarize-empty",
+                "summary_level": "turn",
+                "chunks": [],
+            },
+        )
+
+    assert summarize_response.status_code == 200
+    body = summarize_response.json()
+    assert body["sidecar_status"] == "degraded"
+    assert body["summary"] is None
+    assert body["warnings"][0]["kind"] == "summarize_input"
+
+
 def test_summarize_returns_ok_for_empty_store(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
 
