@@ -17,6 +17,7 @@ from photon_action_memory.api.schema_v2 import (
 )
 from photon_action_memory.context.admission import ContextAdmissionController
 from photon_action_memory.context.budget import TokenBudgetTracker
+from photon_action_memory.context.quality_gate import evaluate_summary_quality
 from photon_action_memory.context.raw_policy import RawEvidenceItem, evaluate_raw_item
 from photon_action_memory.context.render import estimate_tokens, render_summary
 from photon_action_memory.eval import summary_feedback as _summary_feedback_mod
@@ -28,6 +29,11 @@ _RAW_ADMISSION_POLICY = AdmissionPolicy(raw_evidence_policy="raw_tool_log_defaul
 def _raw_decision_id(item_id: str) -> str:
     digest = hashlib.sha256(item_id.encode()).hexdigest()[:12]
     return f"dec-raw-{digest}"
+
+
+def _quality_decision_id(item_id: str) -> str:
+    digest = hashlib.sha256(item_id.encode()).hexdigest()[:12]
+    return f"dec-quality-{digest}"
 
 
 def _disabled_reason(record: SummaryFeedbackRecord) -> str:
@@ -46,6 +52,7 @@ def build_context_pack(
     warnings: list[ContextPackWarning] | None = None,
     raw_items: list[RawEvidenceItem] | None = None,
     summary_feedback: dict[str, SummaryFeedbackRecord] | None = None,
+    task_text: str | None = None,
 ) -> tuple[ContextPack, list[ContextAdmissionDecision]]:
     """Run the admission pipeline and return a ContextPack with decisions.
 
@@ -66,6 +73,7 @@ def build_context_pack(
     items: list[ContextPackItem] = []
     omitted: list[OmittedItem] = []
     decisions: list[ContextAdmissionDecision] = []
+    pack_warnings = list(warnings or [])
 
     ordered_summaries, disabled_summaries = _apply_feedback(summaries, summary_feedback)
     for disabled_summary, disabled_reason in disabled_summaries:
@@ -79,6 +87,32 @@ def build_context_pack(
         )
 
     for summary in ordered_summaries:
+        quality = evaluate_summary_quality(summary, task_text)
+        for message in quality.warnings:
+            pack_warnings.append(ContextPackWarning(kind="summary_quality_gate", message=message))
+        if quality.decision == "reject":
+            quality_reason = quality.reason or "summary quality gate rejected"
+            decisions.append(
+                ContextAdmissionDecision(
+                    schema_version=DEFAULT_SCHEMA_VERSION_V2,
+                    decision_id=_quality_decision_id(summary.summary_id),
+                    item_id=summary.summary_id,
+                    item_kind="action_summary",
+                    decision="deny",
+                    reason=quality_reason,
+                    risk=quality.risk,
+                    policy=AdmissionPolicy(detail_level="summarize_quality_gate"),
+                )
+            )
+            omitted.append(
+                OmittedItem(
+                    kind="action_summary",
+                    id=summary.summary_id,
+                    reason=quality_reason,
+                )
+            )
+            continue
+
         decision, reason = controller.evaluate(summary)
         decisions.append(controller.make_decision(summary, decision, reason))
 
@@ -139,7 +173,7 @@ def build_context_pack(
         mode="summary_only",
         items=items,
         omitted=omitted,
-        warnings=warnings or [],
+        warnings=pack_warnings,
         token_budget=tracker.to_token_budget(),
     )
     return pack, decisions

@@ -23,6 +23,7 @@ from photon_action_memory.api.schema_v2 import (
     Fact,
     FailedAttempt,
     Hypothesis,
+    NextHint,
     TokenCost,
     Validity,
 )
@@ -49,6 +50,7 @@ def _make_summary(
     hypotheses: list[Hypothesis] | None = None,
     failed_attempts: list[FailedAttempt] | None = None,
     avoid: list[AvoidGuidance] | None = None,
+    next_hints: list[NextHint] | None = None,
     validity_status: str = "valid",
     token_cost: TokenCost | None = None,
 ) -> ActionSummary:
@@ -62,6 +64,7 @@ def _make_summary(
         hypotheses=hypotheses or [],
         failed_attempts=failed_attempts or [],
         avoid=avoid or [],
+        next_hints=next_hints or [],
         validity=Validity(status=validity_status),
         token_cost=token_cost,
     )
@@ -77,6 +80,10 @@ def _hypothesis(text: str) -> Hypothesis:
 
 def _failed(action: str) -> FailedAttempt:
     return FailedAttempt(action=action, outcome="error", evidence_ids=[])
+
+
+def _hint(kind: str, reason: str, target: str | None = None) -> NextHint:
+    return NextHint(kind=kind, target=target, reason=reason, confidence=0.8)
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +414,74 @@ def test_build_context_pack_failed_attempt_and_avoid_admitted() -> None:
     assert "AVOID:" in pack.items[0].text
 
 
+def test_build_context_pack_rejects_s2_style_task_overlap_seed() -> None:
+    task_text = (
+        "Create a SvelteKit page in src/routes/+page.svelte with at least one "
+        "interactive HTML element. Do not use React or Next.js."
+    )
+    summary = _make_summary(
+        "sum-s2-overlap",
+        facts=[
+            _fact(
+                "Repo S2-03 is a SvelteKit project. The main page is "
+                "src/routes/+page.svelte. verify.mjs checks that the page contains "
+                "at least one interactive HTML element and does not use React or Next.js."
+            )
+        ],
+        next_hints=[_hint("edit", "Add a native Svelte interactive element such as a button.")],
+    )
+
+    pack, decisions = build_context_pack(
+        request_id="req-quality-s2",
+        session_id=None,
+        repo_id=None,
+        summaries=[summary],
+        budget=ContextPackBudget(),
+        task_text=task_text,
+    )
+
+    assert pack.items == []
+    assert pack.omitted[0].id == "sum-s2-overlap"
+    assert "low_value task overlap" in pack.omitted[0].reason
+    assert "premature_termination_risk" in pack.omitted[0].reason
+    assert decisions[0].decision == "deny"
+    assert decisions[0].policy is not None
+    assert decisions[0].policy.detail_level == "summarize_quality_gate"
+    assert pack.warnings[0].kind == "summary_quality_gate"
+
+
+def test_build_context_pack_keeps_s5_style_meta_information_seed() -> None:
+    summary = _make_summary(
+        "sum-s5-meta",
+        facts=[
+            _fact(
+                "ANVIL.md specifies preferred verifier: python3 custom_check.py. "
+                "Do not use pytest for this fixture."
+            )
+        ],
+        avoid=[
+            AvoidGuidance(
+                action="use pytest for verification",
+                reason="ANVIL.md says python3 custom_check.py is the verifier",
+            )
+        ],
+    )
+
+    pack, decisions = build_context_pack(
+        request_id="req-quality-s5",
+        session_id=None,
+        repo_id=None,
+        summaries=[summary],
+        budget=ContextPackBudget(),
+        task_text="Fix the fixture and verify it before the final answer.",
+    )
+
+    assert [item.id for item in pack.items] == ["sum-s5-meta"]
+    assert pack.omitted == []
+    assert decisions[0].decision == "admit"
+    assert "custom_check.py" in pack.items[0].text
+
+
 # ---------------------------------------------------------------------------
 # API integration - POST /v1/context/pack
 # ---------------------------------------------------------------------------
@@ -608,6 +683,40 @@ def test_context_pack_api_auto_search_excludes_stale_and_omits_empty(
     assert item_ids == {"sum-valid"}
     assert "sum-stale" not in item_ids
     assert omitted_ids == {"sum-empty"}
+
+
+def test_context_pack_api_reports_quality_gate_rejection(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-s2-api",
+            repo_id="photon-test",
+            facts=[
+                _fact(
+                    "Repo S2-03 is a SvelteKit project. The main page is "
+                    "src/routes/+page.svelte. verify.mjs checks that the page contains "
+                    "at least one interactive HTML element and does not use React or Next.js."
+                )
+            ],
+            next_hints=[_hint("edit", "Add a native Svelte interactive element such as a button.")],
+        )
+    )
+    body = _pack_request()
+    body["task"]["user_request"] = (
+        "Create a SvelteKit page in src/routes/+page.svelte with at least one "
+        "interactive HTML element. Do not use React or Next.js."
+    )
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["context_pack"]["items"] == []
+    assert payload["context_pack"]["omitted"][0]["id"] == "sum-s2-api"
+    assert "low_value task overlap" in payload["context_pack"]["omitted"][0]["reason"]
+    assert payload["admission_decisions"][0]["decision"] == "deny"
+    assert payload["context_pack"]["warnings"][0]["kind"] == "summary_quality_gate"
 
 
 def test_context_pack_api_masks_prompt_visible_summary_secrets(tmp_path: Path) -> None:
