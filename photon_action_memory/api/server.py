@@ -24,6 +24,7 @@ from photon_action_memory.api.schema import (
 )
 from photon_action_memory.api.schema_v2 import (
     DEFAULT_SCHEMA_VERSION_V2,
+    ActionChunk,
     ActionSummary,
     ContextPack,
     ContextPackRequest,
@@ -39,6 +40,7 @@ from photon_action_memory.api.schema_v2 import (
     SummaryValidateRequest,
     SummaryValidateResponse,
     TokenBudget,
+    TokenCost,
 )
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.raw_policy import RawEvidenceItem
@@ -47,7 +49,11 @@ from photon_action_memory.memory.chunks import ActionChunker
 from photon_action_memory.memory.evidence import EvidenceExpander
 from photon_action_memory.memory.retrieval import SummaryRetriever
 from photon_action_memory.memory.store import SQLiteEventStore
-from photon_action_memory.memory.summaries import ActionSummaryBuilder, SummaryCanonicalizer
+from photon_action_memory.memory.summaries import (
+    ActionSummaryBuilder,
+    SummaryCanonicalizer,
+    SummaryStateUpdater,
+)
 from photon_action_memory.memory.summary_store import SummaryStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
@@ -243,6 +249,9 @@ def create_app(
 
     @app.post("/v1/summarize", response_model=SummarizeResponse)
     def summarize(request: SummarizeRequest) -> SummarizeResponse:
+        if "chunks" in request.model_fields_set:
+            return _summarize_inline_chunks(request, event_store, _summary_store)
+
         try:
             repo_id = request.repo_id
             if repo_id is None and request.repo is not None:
@@ -281,6 +290,7 @@ def create_app(
             summary_ids=summary_ids,
             summary=summaries[0] if summaries else None,
             validation=None,
+            tokens_saved_vs_raw=sum(_tokens_saved(summary.token_cost) for summary in summaries),
             warnings=[],
         )
 
@@ -331,6 +341,98 @@ def create_app(
         )
 
     return app
+
+
+def _summarize_inline_chunks(
+    request: SummarizeRequest,
+    event_store: SQLiteEventStore,
+    summary_store: SummaryStore,
+) -> SummarizeResponse:
+    warnings: list[ContextPackWarning] = []
+    try:
+        summary = _build_hierarchical_summary(request)
+    except ValueError as exc:
+        return SummarizeResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            model_version=FALLBACK_MODEL_VERSION,
+            sidecar_status="degraded",
+            status="degraded",
+            chunks_built=0,
+            summaries_upserted=0,
+            summary_ids=[],
+            summary=None,
+            validation=None,
+            tokens_saved_vs_raw=0,
+            warnings=[ContextPackWarning(kind="summarize_input", message=str(exc))],
+        )
+
+    try:
+        evidence_records = [ev.payload for ev in event_store.list_events()]
+        checker = SummaryFidelityChecker(records=evidence_records)
+        validation = checker.check(summary)
+    except Exception as exc:
+        logger.warning("summarize fidelity error: %s", exc)
+        validation = None
+        warnings.append(ContextPackWarning(kind="summarize_validation_error", message=str(exc)))
+
+    summary_ids: list[str] = []
+    summaries_upserted = 0
+    try:
+        summary_store.upsert(summary)
+        summary_ids.append(summary.summary_id)
+        summaries_upserted = 1
+    except Exception as exc:
+        logger.warning("summarize persist error: %s", exc)
+        warnings.append(ContextPackWarning(kind="summarize_persist_error", message=str(exc)))
+
+    return SummarizeResponse(
+        schema_version=DEFAULT_SCHEMA_VERSION_V2,
+        request_id=request.request_id,
+        model_version=FALLBACK_MODEL_VERSION,
+        sidecar_status="degraded" if warnings else "ok",
+        status="degraded" if warnings else "ok",
+        chunks_built=len(request.chunks),
+        summaries_upserted=summaries_upserted,
+        summary_ids=summary_ids,
+        summary=summary,
+        validation=validation,
+        tokens_saved_vs_raw=_tokens_saved(summary.token_cost),
+        warnings=warnings,
+    )
+
+
+def _tokens_saved(token_cost: TokenCost | None) -> int:
+    if token_cost is None:
+        return 0
+    return max(0, token_cost.tokens_saved_vs_raw)
+
+
+def _build_hierarchical_summary(request: SummarizeRequest) -> ActionSummary:
+    """Fold request chunks into a single ActionSummary at the requested level."""
+    chunks: list[ActionChunk] = list(request.chunks)
+    if not chunks:
+        msg = "summarize requires at least one chunk"
+        raise ValueError(msg)
+
+    builder = ActionSummaryBuilder()
+    canonicalizer = SummaryCanonicalizer()
+    updater = SummaryStateUpdater()
+
+    state = canonicalizer.canonicalize(builder.build(chunks[0])).summary
+    for chunk in chunks[1:]:
+        state = updater.update(state, chunk)
+
+    overrides: dict[str, object] = {"summary_level": request.summary_level}
+    if request.session_id is not None:
+        overrides["session_id"] = request.session_id
+    if request.repo_id is not None:
+        overrides["repo_id"] = request.repo_id
+    if request.task_signature is not None:
+        overrides["task_signature"] = request.task_signature
+    if request.summary_id:
+        overrides["summary_id"] = request.summary_id
+    return state.model_copy(update=overrides)
 
 
 def _extract_raw_items(request: ContextPackRequest) -> list[RawEvidenceItem]:
