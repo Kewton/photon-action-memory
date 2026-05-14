@@ -450,6 +450,53 @@ def test_build_context_pack_rejects_s2_style_task_overlap_seed() -> None:
     assert pack.warnings[0].kind == "summary_quality_gate"
 
 
+def test_build_context_pack_rejects_japanese_task_english_seed_overlap() -> None:
+    """Cross-lingual JP task + EN seed should still trip the quality gate.
+
+    Regression test for Issue #97: the legacy ASCII-only detector did not
+    bridge Japanese task verbs/nouns (``作成``, ``要素``, ``インタラクティブ``)
+    to their English equivalents in the seed, so a Japanese task paired with
+    an English summary slipped past ``premature_termination_risk``.
+    """
+    task_text = (
+        "src/routes/+page.svelte に SvelteKit のページを作成してください。"
+        "少なくとも1つのインタラクティブな HTML 要素を含めてください。"
+        "React や Next.js は使用しないでください。"
+    )
+    summary = _make_summary(
+        "sum-jp-task-en-seed",
+        facts=[
+            _fact(
+                "Repo S2-03 is a SvelteKit project. The main page is "
+                "src/routes/+page.svelte. verify.mjs checks that the page contains "
+                "at least one interactive HTML element and does not use React or Next.js."
+            )
+        ],
+        next_hints=[
+            _hint(
+                "edit",
+                "Add a native Svelte interactive element such as a button.",
+            )
+        ],
+    )
+
+    pack, decisions = build_context_pack(
+        request_id="req-quality-jp",
+        session_id=None,
+        repo_id=None,
+        summaries=[summary],
+        budget=ContextPackBudget(),
+        task_text=task_text,
+    )
+
+    assert pack.items == []
+    assert pack.omitted[0].id == "sum-jp-task-en-seed"
+    assert "premature_termination_risk" in pack.omitted[0].reason
+    assert decisions[0].decision == "deny"
+    quality_warnings = [w for w in pack.warnings if w.kind == "summary_quality_gate"]
+    assert any("premature_termination_risk" in w.message for w in quality_warnings)
+
+
 def test_build_context_pack_keeps_s5_style_meta_information_seed() -> None:
     summary = _make_summary(
         "sum-s5-meta",

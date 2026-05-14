@@ -2,38 +2,15 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from photon_action_memory.api.schema_v2 import ActionSummary
-
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
-_STOPWORDS = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "by",
-        "for",
-        "from",
-        "in",
-        "into",
-        "is",
-        "it",
-        "of",
-        "on",
-        "or",
-        "that",
-        "the",
-        "this",
-        "to",
-        "with",
-    }
+from photon_action_memory.context.overlap_detector import (
+    OverlapDetectorMode,
+    compute_overlap,
+    tokenize,
 )
+
 _DIRECT_NEXT_ACTIONS = frozenset(
     {
         "add",
@@ -78,23 +55,34 @@ class SummaryQualityGateResult:
 
 
 def evaluate_summary_quality(
-    summary: ActionSummary, task_text: str | None
+    summary: ActionSummary,
+    task_text: str | None,
+    *,
+    mode: OverlapDetectorMode | None = None,
 ) -> SummaryQualityGateResult:
-    """Reject summaries that mostly repeat the current task and shortcut exploration."""
-    task_tokens = _tokens(task_text or "")
+    """Reject summaries that mostly repeat the current task and shortcut exploration.
+
+    ``mode`` selects the overlap detector (``ascii``/``multilingual``/
+    ``embedding``/``hybrid``). When ``None`` the configured default is used so
+    cross-lingual task↔seed combinations are detected without the caller
+    having to opt in.
+    """
+    task_text_norm = task_text or ""
+    task_tokens = tokenize(task_text_norm, mode=mode)
     if not task_tokens:
         return SummaryQualityGateResult(decision="allow")
 
     summary_text = _summary_prompt_text(summary)
-    summary_tokens = _tokens(summary_text)
+    summary_tokens = tokenize(summary_text, mode=mode)
     if not summary_tokens:
         return SummaryQualityGateResult(decision="allow")
 
-    overlap = len(summary_tokens & task_tokens) / len(summary_tokens)
-    novel_ratio = len(summary_tokens - task_tokens) / len(summary_tokens)
+    overlap_result = compute_overlap(summary_text, task_text_norm, mode=mode)
+    overlap = overlap_result.overlap
+    novel_ratio = overlap_result.novel
     meta_info = _has_meta_information(summary_text)
     verification_guidance = _has_verification_guidance(summary)
-    premature_risk = _has_premature_termination_risk(summary, task_tokens)
+    premature_risk = _has_premature_termination_risk(summary, task_tokens, mode=mode)
 
     warnings: list[str] = []
     if premature_risk:
@@ -137,10 +125,6 @@ def evaluate_summary_quality(
     )
 
 
-def _tokens(text: str) -> set[str]:
-    return {token for token in _TOKEN_RE.findall(text.lower()) if token not in _STOPWORDS}
-
-
 def _summary_prompt_text(summary: ActionSummary) -> str:
     parts: list[str] = []
     parts.extend(fact.text for fact in summary.facts)
@@ -173,11 +157,17 @@ def _has_verification_guidance(summary: ActionSummary) -> bool:
     return False
 
 
-def _has_premature_termination_risk(summary: ActionSummary, task_tokens: set[str]) -> bool:
+def _has_premature_termination_risk(
+    summary: ActionSummary,
+    task_tokens: set[str],
+    *,
+    mode: OverlapDetectorMode | None = None,
+) -> bool:
     for hint in summary.next_hints:
         if hint.kind.lower() in {"verify", "test", "inspect", "read"}:
             continue
-        hint_tokens = _tokens(f"{hint.kind} {hint.target or ''} {hint.reason}")
+        hint_text = f"{hint.kind} {hint.target or ''} {hint.reason}"
+        hint_tokens = tokenize(hint_text, mode=mode)
         if not hint_tokens:
             continue
         direct_action = bool(hint_tokens & _DIRECT_NEXT_ACTIONS)
