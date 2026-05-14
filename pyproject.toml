@@ -37,6 +37,9 @@ dev = [
 mlx = [
   "mlx>=0.20",
 ]
+embedding = [
+  "sentence-transformers>=2.7",
+]
 
 [project.urls]
 Homepage = "https://github.com/kewton/photon-action-memory"
