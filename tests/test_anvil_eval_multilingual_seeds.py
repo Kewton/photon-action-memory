@@ -15,14 +15,18 @@ import re
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from photon_action_memory.api.schema_v2 import (
     DEFAULT_SCHEMA_VERSION_V2,
     ActionSummary,
     ContextPackBudget,
 )
+from photon_action_memory.api.server import create_app
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.render import render_summary
+from photon_action_memory.memory.store import SQLiteEventStore
+from photon_action_memory.memory.summary_store import SummaryStore
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SHARED = REPO_ROOT / "tests" / "fixtures" / "shared"
@@ -31,13 +35,22 @@ SEED_SCRIPT = REPO_ROOT / "scripts" / "seed_expanded_eval_scenarios.sh"
 SEED_FILES: tuple[str, ...] = (
     "anvil_eval_s1_02_action_summary.json",
     "anvil_eval_s2_03_action_summary.json",
+    "anvil_eval_s2_03_en_action_summary.json",
     "anvil_eval_s3_01_action_summary.json",
+    "anvil_eval_s3_01_en_action_summary.json",
     "anvil_eval_s3_03_action_summary.json",
     "anvil_eval_s3_04_action_summary.json",
     "anvil_eval_s5_01_action_summary.json",
+    "anvil_eval_s5_01_en_action_summary.json",
     "anvil_eval_s6_04_action_summary.json",
     "anvil_eval_sp01_action_summary.json",
 )
+
+CROSS_LINGUAL_EN_SEEDS: dict[str, str] = {
+    "anvil_eval_s2_03_en_action_summary.json": "S2-03-en",
+    "anvil_eval_s3_01_en_action_summary.json": "S3-01-en",
+    "anvil_eval_s5_01_en_action_summary.json": "S5-01-en",
+}
 
 _JA_CHAR_RE = re.compile(r"[぀-ヿ㐀-鿿]")
 
@@ -124,3 +137,45 @@ def test_seed_script_references_all_fixtures() -> None:
     contents = SEED_SCRIPT.read_text(encoding="utf-8")
     for filename in SEED_FILES:
         assert filename in contents, f"seed script must reference {filename}"
+
+
+@pytest.mark.parametrize(("filename", "repo_id"), CROSS_LINGUAL_EN_SEEDS.items())
+def test_en_variant_seed_repo_id_matches_anvil_workdir(filename: str, repo_id: str) -> None:
+    summary = ActionSummary.model_validate(_load(filename))
+    assert summary.repo_id == repo_id
+    assert repo_id.lower().replace("-", "_") in filename
+
+
+@pytest.mark.parametrize(("filename", "repo_id"), CROSS_LINGUAL_EN_SEEDS.items())
+def test_en_variant_seed_resolves_by_exact_repo_id(
+    tmp_path: Path, filename: str, repo_id: str
+) -> None:
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    event_store = SQLiteEventStore(tmp_path / "events.sqlite")
+    summary = ActionSummary.model_validate(_load(filename))
+    summary_store.upsert(summary)
+
+    body = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": f"pack-{repo_id}",
+        "agent": {"name": "anvil", "version": "dev"},
+        "repo": {"root": f"/tmp/anvil-eval/{repo_id}", "name": repo_id},
+        "task": {
+            "user_request": "Use photon memory for the English cross-lingual scenario.",
+            "mode": "act",
+            "summary": "cross_lingual EN scenario",
+        },
+        "working_memory": {"touched_files": []},
+        "recent_event_ids": [],
+        "candidate_summary_ids": [],
+        "budget": {"max_memory_tokens": 800, "max_evidence_chars": 1200},
+    }
+    with TestClient(create_app(event_store, summary_store)) as client:
+        response = client.post("/v1/context/pack", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sidecar_status"] == "ok"
+    assert payload["context_pack"]["repo_id"] == repo_id
+    assert [item["id"] for item in payload["context_pack"]["items"]] == [summary.summary_id]
+    assert payload["admission_decisions"][0]["decision"] == "admit"

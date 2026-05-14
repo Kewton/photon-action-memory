@@ -1,0 +1,57 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-eval-s3-01-en-calculator-001",
+  "session_id": "anvil-eval-s3-01-en-session-001",
+  "repo_id": "S3-01-en",
+  "task_signature": "python-bug-fix-calculator",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-eval-s3-01-en-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "edit",
+      "target": "calculator.py",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-eval-s3-01-en-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "Repo S3-01-en has a bug in calculator.py: the add() function returns a - b (subtraction) instead of a + b (addition). Fix: change return a - b to return a + b. Verify with: python3 verify.py.",
+      "evidence_ids": ["anvil-eval-s3-01-en-ev-001"],
+      "confidence": 0.99,
+      "lang": "en"
+    },
+    {
+      "text": "リポジトリ S3-01-en の calculator.py にバグがある。add() が a + b ではなく a - b を返している。修正方法は return a - b を return a + b に変えること。確認は python3 verify.py で行う。",
+      "evidence_ids": ["anvil-eval-s3-01-en-ev-001"],
+      "confidence": 0.99,
+      "lang": "ja"
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [],
+  "next_hints": [
+    {
+      "kind": "edit",
+      "target": "calculator.py",
+      "reason": "Fix the add() function: change return a - b to return a + b. Run python3 verify.py to confirm.",
+      "confidence": 0.97,
+      "lang": "en"
+    },
+    {
+      "kind": "edit",
+      "target": "calculator.py",
+      "reason": "add() 関数を修正する: return a - b を return a + b に変える。python3 verify.py で確認する。",
+      "confidence": 0.97,
+      "lang": "ja"
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 136,
+    "estimated_raw_tokens": 294,
+    "tokens_saved_vs_raw": 158
+  }
+}
