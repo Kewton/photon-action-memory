@@ -1,0 +1,57 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-eval-s3-04-slugify-001",
+  "session_id": "anvil-eval-s3-04-session-001",
+  "repo_id": "S3-04",
+  "task_signature": "python-fix-failing-test-slugify",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-eval-s3-04-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "edit",
+      "target": "slugify.py",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-eval-s3-04-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "Repo S3-04 has a bug in slugify.py: slugify() uses replace(' ', '_') but the test expects hyphens not underscores (e.g. 'hello-local-llm' not 'hello_local_llm'). Fix: change replace(' ', '_') to replace(' ', '-'). Verify with: python3 verify.py.",
+      "evidence_ids": ["anvil-eval-s3-04-ev-001"],
+      "confidence": 0.99,
+      "lang": "en"
+    },
+    {
+      "text": "リポジトリ S3-04 の slugify.py にバグがある。slugify() は replace(' ', '_') を使っているが、テストはアンダースコアではなくハイフンを期待している（例: 'hello-local-llm'、'hello_local_llm' ではない）。修正は replace(' ', '_') を replace(' ', '-') に変えること。確認は python3 verify.py。",
+      "evidence_ids": ["anvil-eval-s3-04-ev-001"],
+      "confidence": 0.99,
+      "lang": "ja"
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [],
+  "next_hints": [
+    {
+      "kind": "edit",
+      "target": "slugify.py",
+      "reason": "Change replace(' ', '_') to replace(' ', '-') in slugify(). Run python3 verify.py to confirm.",
+      "confidence": 0.97,
+      "lang": "en"
+    },
+    {
+      "kind": "edit",
+      "target": "slugify.py",
+      "reason": "slugify() の replace(' ', '_') を replace(' ', '-') に変更する。python3 verify.py で確認する。",
+      "confidence": 0.97,
+      "lang": "ja"
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 168,
+    "estimated_raw_tokens": 300,
+    "tokens_saved_vs_raw": 132
+  }
+}

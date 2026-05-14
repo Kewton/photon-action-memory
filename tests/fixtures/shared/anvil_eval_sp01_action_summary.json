@@ -1,0 +1,57 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-eval-sp01-codename-001",
+  "session_id": "anvil-eval-sp01-session-001",
+  "repo_id": "SP-01",
+  "task_signature": "project-codename-question",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-eval-sp01-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "inspect",
+      "target": "memory-seed",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-eval-sp01-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "The project codename for repo SP-01 is crestline.",
+      "evidence_ids": ["anvil-eval-sp01-ev-001"],
+      "confidence": 0.98,
+      "lang": "en"
+    },
+    {
+      "text": "リポジトリ SP-01 のプロジェクトコードネームは crestline。",
+      "evidence_ids": ["anvil-eval-sp01-ev-001"],
+      "confidence": 0.98,
+      "lang": "ja"
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [],
+  "next_hints": [
+    {
+      "kind": "answer",
+      "target": "codename",
+      "reason": "Use the stored codename fact when the user asks for the project codename.",
+      "confidence": 0.9,
+      "lang": "en"
+    },
+    {
+      "kind": "answer",
+      "target": "codename",
+      "reason": "ユーザーがプロジェクトコードネームを尋ねたら、保存された codename fact を使う。",
+      "confidence": 0.9,
+      "lang": "ja"
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 62,
+    "estimated_raw_tokens": 560,
+    "tokens_saved_vs_raw": 498
+  }
+}
