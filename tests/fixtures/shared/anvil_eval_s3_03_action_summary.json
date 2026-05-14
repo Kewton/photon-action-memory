@@ -1,0 +1,57 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-eval-s3-03-invoice-001",
+  "session_id": "anvil-eval-s3-03-session-001",
+  "repo_id": "S3-03",
+  "task_signature": "python-multifile-dependency-fix",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-eval-s3-03-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "edit",
+      "target": "invoice.py",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-eval-s3-03-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "Repo S3-03 has two Python files: prices.py defines TAX_RATE = 0.10 and subtotal(items), invoice.py defines total(items) which calls subtotal but ignores TAX_RATE. The bug: total() must apply tax. Fix invoice.py to import TAX_RATE from prices and return subtotal(items) * (1 + TAX_RATE). Verify with: python3 verify.py.",
+      "evidence_ids": ["anvil-eval-s3-03-ev-001"],
+      "confidence": 0.99,
+      "lang": "en"
+    },
+    {
+      "text": "リポジトリ S3-03 には Python ファイルが 2 つある: prices.py は TAX_RATE = 0.10 と subtotal(items) を定義し、invoice.py は total(items) で subtotal を呼ぶが TAX_RATE を無視している。バグは total() に税を適用していないこと。修正は invoice.py で prices から TAX_RATE を import し、return subtotal(items) * (1 + TAX_RATE) に変更すること。確認は python3 verify.py。",
+      "evidence_ids": ["anvil-eval-s3-03-ev-001"],
+      "confidence": 0.99,
+      "lang": "ja"
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [],
+  "next_hints": [
+    {
+      "kind": "edit",
+      "target": "invoice.py",
+      "reason": "Import TAX_RATE from prices and fix total() to return subtotal(items) * (1 + TAX_RATE). Both prices.py and invoice.py may need changes. Run python3 verify.py.",
+      "confidence": 0.97,
+      "lang": "en"
+    },
+    {
+      "kind": "edit",
+      "target": "invoice.py",
+      "reason": "prices から TAX_RATE を import し、total() が subtotal(items) * (1 + TAX_RATE) を返すように修正する。prices.py / invoice.py の両方の編集が必要な場合がある。python3 verify.py で確認する。",
+      "confidence": 0.97,
+      "lang": "ja"
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 238,
+    "estimated_raw_tokens": 380,
+    "tokens_saved_vs_raw": 142
+  }
+}

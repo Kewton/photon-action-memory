@@ -1,0 +1,72 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-eval-s2-03-svelte-001",
+  "session_id": "anvil-eval-s2-03-session-001",
+  "repo_id": "S2-03",
+  "task_signature": "sveltekit-route-edit-add-control",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-eval-s2-03-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "edit",
+      "target": "src/routes/+page.svelte",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-eval-s2-03-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "Repo S2-03 is a SvelteKit project. The main page is src/routes/+page.svelte. The verify.mjs script checks that the page contains at least one interactive HTML element (button, select, input, or textarea) and does not use React or Next.js.",
+      "evidence_ids": ["anvil-eval-s2-03-ev-001"],
+      "confidence": 0.97,
+      "lang": "en"
+    },
+    {
+      "text": "リポジトリ S2-03 は SvelteKit プロジェクト。メインページは src/routes/+page.svelte。verify.mjs は button / select / input / textarea などインタラクティブ HTML 要素が 1 つ以上含まれ、かつ React / Next.js を使っていないことを検査する。",
+      "evidence_ids": ["anvil-eval-s2-03-ev-001"],
+      "confidence": 0.97,
+      "lang": "ja"
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [
+    {
+      "action": "add React or Next.js components",
+      "reason": "verify.mjs explicitly fails if React or Next is detected",
+      "valid_until": "never",
+      "evidence_ids": ["anvil-eval-s2-03-ev-001"],
+      "lang": "en"
+    },
+    {
+      "action": "React や Next.js のコンポーネントを追加する",
+      "reason": "verify.mjs が React / Next.js を検出すると必ず失敗する",
+      "valid_until": "never",
+      "evidence_ids": ["anvil-eval-s2-03-ev-001"],
+      "lang": "ja"
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "edit",
+      "target": "src/routes/+page.svelte",
+      "reason": "Add a native Svelte interactive element (e.g. <button>) inside the existing +page.svelte. Run node verify.mjs to confirm.",
+      "confidence": 0.93,
+      "lang": "en"
+    },
+    {
+      "kind": "edit",
+      "target": "src/routes/+page.svelte",
+      "reason": "既存の +page.svelte に Svelte ネイティブのインタラクティブ要素（例: <button>）を追加する。node verify.mjs で確認する。",
+      "confidence": 0.93,
+      "lang": "ja"
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 210,
+    "estimated_raw_tokens": 420,
+    "tokens_saved_vs_raw": 210
+  }
+}

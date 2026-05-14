@@ -1,0 +1,57 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-eval-s1-02-script-001",
+  "session_id": "anvil-eval-s1-02-session-001",
+  "repo_id": "S1-02",
+  "task_signature": "run-local-script-summarize",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-eval-s1-02-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "execute",
+      "target": "summarize.py",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-eval-s1-02-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "Repo S1-02 contains summarize.py which prints a JSON object with keys alpha, beta, and total. Run with: python3 summarize.py. No files should be modified.",
+      "evidence_ids": ["anvil-eval-s1-02-ev-001"],
+      "confidence": 0.97,
+      "lang": "en"
+    },
+    {
+      "text": "リポジトリ S1-02 には summarize.py があり、キー alpha, beta, total を持つ JSON を標準出力に出力する。実行コマンドは python3 summarize.py。ファイルは編集しないこと。",
+      "evidence_ids": ["anvil-eval-s1-02-ev-001"],
+      "confidence": 0.97,
+      "lang": "ja"
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [],
+  "next_hints": [
+    {
+      "kind": "action",
+      "target": "summarize.py",
+      "reason": "Run python3 summarize.py and report the stdout output. Do not edit any files.",
+      "confidence": 0.95,
+      "lang": "en"
+    },
+    {
+      "kind": "action",
+      "target": "summarize.py",
+      "reason": "python3 summarize.py を実行し、標準出力をそのまま報告する。ファイル編集は行わない。",
+      "confidence": 0.95,
+      "lang": "ja"
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 112,
+    "estimated_raw_tokens": 320,
+    "tokens_saved_vs_raw": 208
+  }
+}

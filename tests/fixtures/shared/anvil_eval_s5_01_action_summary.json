@@ -1,0 +1,72 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "anvil-eval-s5-01-tool-double-001",
+  "session_id": "anvil-eval-s5-01-session-001",
+  "repo_id": "S5-01",
+  "task_signature": "python-bug-fix-anvil-md-verifier",
+  "summary_level": "chunk",
+  "source_chunk_ids": ["anvil-eval-s5-01-chunk-001"],
+  "actions_done": [
+    {
+      "kind": "edit",
+      "target": "tool.py",
+      "outcome": "useful",
+      "status": "completed",
+      "evidence_ids": ["anvil-eval-s5-01-ev-001"]
+    }
+  ],
+  "facts": [
+    {
+      "text": "Repo S5-01 has a bug in tool.py: double(x) returns x + x + 1 instead of x + x. Fix: change return x + x + 1 to return x + x (or return x * 2). ANVIL.md specifies preferred verifier: python3 custom_check.py.",
+      "evidence_ids": ["anvil-eval-s5-01-ev-001"],
+      "confidence": 0.99,
+      "lang": "en"
+    },
+    {
+      "text": "リポジトリ S5-01 の tool.py にバグがある。double(x) が x + x ではなく x + x + 1 を返している。修正は return x + x + 1 を return x + x（または return x * 2）に変えること。ANVIL.md は推奨検証コマンドを指定しており、python3 custom_check.py を使う。",
+      "evidence_ids": ["anvil-eval-s5-01-ev-001"],
+      "confidence": 0.99,
+      "lang": "ja"
+    }
+  ],
+  "hypotheses": [],
+  "failed_attempts": [],
+  "avoid": [
+    {
+      "action": "use pytest for verification",
+      "reason": "ANVIL.md explicitly says not to use pytest for this project",
+      "valid_until": "never",
+      "evidence_ids": ["anvil-eval-s5-01-ev-001"],
+      "lang": "en"
+    },
+    {
+      "action": "pytest で検証する",
+      "reason": "ANVIL.md がこのプロジェクトでは pytest を使わないよう明記している",
+      "valid_until": "never",
+      "evidence_ids": ["anvil-eval-s5-01-ev-001"],
+      "lang": "ja"
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "edit",
+      "target": "tool.py",
+      "reason": "Fix double(x): change return x + x + 1 to return x + x. Use the ANVIL.md preferred verifier: python3 custom_check.py.",
+      "confidence": 0.97,
+      "lang": "en"
+    },
+    {
+      "kind": "edit",
+      "target": "tool.py",
+      "reason": "double(x) を修正する: return x + x + 1 を return x + x に変える。ANVIL.md 推奨の python3 custom_check.py で検証する。",
+      "confidence": 0.97,
+      "lang": "ja"
+    }
+  ],
+  "validity": {"status": "valid"},
+  "token_cost": {
+    "estimated_summary_tokens": 202,
+    "estimated_raw_tokens": 340,
+    "tokens_saved_vs_raw": 138
+  }
+}
