@@ -171,9 +171,7 @@ def test_fact_overlap_without_negation_does_not_flag() -> None:
 def test_next_hint_opposite_verb_conflict() -> None:
     a = _summary(
         "hint-enable",
-        next_hints=[
-            NextHint(kind="enable", target="experimental_async_runtime", reason="needed")
-        ],
+        next_hints=[NextHint(kind="enable", target="experimental_async_runtime", reason="needed")],
     )
     b = _summary(
         "hint-disable",
@@ -194,15 +192,11 @@ def test_next_hint_opposite_verb_conflict() -> None:
 def test_next_hint_same_verb_does_not_flag() -> None:
     a = _summary(
         "hint-enable-1",
-        next_hints=[
-            NextHint(kind="enable", target="cache_module", reason="speed")
-        ],
+        next_hints=[NextHint(kind="enable", target="cache_module", reason="speed")],
     )
     b = _summary(
         "hint-enable-2",
-        next_hints=[
-            NextHint(kind="enable", target="cache_module", reason="for tests")
-        ],
+        next_hints=[NextHint(kind="enable", target="cache_module", reason="for tests")],
     )
     pairs = detect_contradictions([a, b])
     assert all(pair.kind != "next_hint_conflict" for pair in pairs)
@@ -218,9 +212,7 @@ def test_failed_attempt_versus_next_hint_conflict() -> None:
     )
     b = _summary(
         "hint-rebase",
-        next_hints=[
-            NextHint(kind="run", target="git rebase main with conflicts", reason="retry")
-        ],
+        next_hints=[NextHint(kind="run", target="git rebase main with conflicts", reason="retry")],
     )
     pairs = detect_contradictions([a, b])
     kinds = {pair.kind for pair in pairs}

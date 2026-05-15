@@ -424,9 +424,7 @@ def create_app(
 def _contradiction_warning(pair: ContradictionPair) -> ContextPackWarning:
     return ContextPackWarning(
         kind="contradiction_detected",
-        message=(
-            f"{pair.kind}: {pair.summary_a_id} vs {pair.summary_b_id} - {pair.evidence}"
-        ),
+        message=(f"{pair.kind}: {pair.summary_a_id} vs {pair.summary_b_id} - {pair.evidence}"),
     )
 
 

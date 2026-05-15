@@ -161,9 +161,7 @@ def _check_avoid_vs_action(
                     summary_a_id=avoider.summary_id,
                     summary_b_id=actor.summary_id,
                     kind="avoid_vs_action",
-                    evidence=(
-                        f"avoid '{guidance_text}' contradicts {source} '{target_text}'"
-                    ),
+                    evidence=(f"avoid '{guidance_text}' contradicts {source} '{target_text}'"),
                 )
             )
     return out
@@ -279,10 +277,7 @@ def _check_next_hint_conflict(
                     summary_a_id=a.summary_id,
                     summary_b_id=b.summary_id,
                     kind="next_hint_conflict",
-                    evidence=(
-                        f"next_hint '{kind_a} {target_a}' "
-                        f"vs '{kind_b} {target_b}'"
-                    ),
+                    evidence=(f"next_hint '{kind_a} {target_a}' vs '{kind_b} {target_b}'"),
                 )
             )
     return out
