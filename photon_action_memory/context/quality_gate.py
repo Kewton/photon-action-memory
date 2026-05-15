@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from photon_action_memory.api.schema_v2 import ActionSummary
@@ -39,6 +40,14 @@ _VERIFY_MARKERS = (
     "run verification",
     "run verifier",
     "verify before",
+)
+_PREMATURE_THRESHOLD_ENV = "PHOTON_PREMATURE_OVERLAP_THRESHOLD"
+_DEFAULT_PREMATURE_THRESHOLD = 0.15
+_CONCRETE_CODE_CHANGE_MARKERS = (
+    "return ",
+    "change return",
+    " to return ",
+    "->",
 )
 
 
@@ -85,7 +94,7 @@ def evaluate_summary_quality(
     premature_risk = _has_premature_termination_risk(summary, task_tokens, mode=mode)
 
     warnings: list[str] = []
-    if premature_risk:
+    if premature_risk and not (meta_info or verification_guidance):
         warnings.append(
             f"{summary.summary_id}: premature_termination_risk: "
             "direct next_hint overlaps current task"
@@ -167,14 +176,46 @@ def _has_premature_termination_risk(
         if hint.kind.lower() in {"verify", "test", "inspect", "read"}:
             continue
         hint_text = f"{hint.kind} {hint.target or ''} {hint.reason}"
+        if _has_concrete_code_change(hint_text):
+            continue
         hint_tokens = tokenize(hint_text, mode=mode)
         if not hint_tokens:
             continue
         direct_action = bool(hint_tokens & _DIRECT_NEXT_ACTIONS)
         overlap = len(hint_tokens & task_tokens) / len(hint_tokens)
-        if direct_action and overlap >= 0.35:
+        if direct_action and overlap >= premature_overlap_threshold():
             return True
     return False
 
 
-__all__ = ["SummaryQualityGateResult", "evaluate_summary_quality"]
+def premature_overlap_threshold() -> float:
+    """Return the direct next-hint overlap threshold for premature risk.
+
+    The default is intentionally lower than the original 0.35 so realistic
+    Anvil task phrasing can still trip the warning. Invalid environment values
+    fail closed to the default instead of disabling the gate.
+    """
+    raw = (os.environ.get(_PREMATURE_THRESHOLD_ENV) or "").strip()
+    if not raw:
+        return _DEFAULT_PREMATURE_THRESHOLD
+    try:
+        threshold = float(raw)
+    except ValueError:
+        return _DEFAULT_PREMATURE_THRESHOLD
+    if threshold < 0.0:
+        return 0.0
+    if threshold > 1.0:
+        return 1.0
+    return threshold
+
+
+def _has_concrete_code_change(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _CONCRETE_CODE_CHANGE_MARKERS)
+
+
+__all__ = [
+    "SummaryQualityGateResult",
+    "evaluate_summary_quality",
+    "premature_overlap_threshold",
+]
