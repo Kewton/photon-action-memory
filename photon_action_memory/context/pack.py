@@ -90,7 +90,12 @@ def build_context_pack(
         quality = evaluate_summary_quality(summary, task_text)
         for message in quality.warnings:
             pack_warnings.append(ContextPackWarning(kind="summary_quality_gate", message=message))
-        if quality.decision == "reject":
+        suppressed_next_hint_indices = set(quality.suppressed_next_hint_indices)
+        rendered_text = render_summary(
+            summary,
+            exclude_next_hint_indices=suppressed_next_hint_indices,
+        )
+        if quality.decision == "reject" and not suppressed_next_hint_indices:
             quality_reason = quality.reason or "summary quality gate rejected"
             decisions.append(
                 ContextAdmissionDecision(
@@ -113,25 +118,34 @@ def build_context_pack(
             )
             continue
 
-        decision, reason = controller.evaluate(summary)
-        decisions.append(controller.make_decision(summary, decision, reason))
+        decision, reason = controller.evaluate(summary, rendered_text=rendered_text)
+        decisions.append(
+            controller.make_decision(
+                summary,
+                decision,
+                reason,
+                rendered_text=rendered_text,
+            )
+        )
 
         if decision == "admit":
-            text = render_summary(summary)
             raw_tokens = (
                 summary.token_cost.estimated_raw_tokens
                 if summary.token_cost
-                else estimate_tokens(text) * 10
+                else estimate_tokens(rendered_text) * 10
             )
             tracker.add_raw(raw_tokens)
             evidence_ids = [eid for f in summary.facts for eid in f.evidence_ids]
+            admission_reason = "grounded and within budget"
+            if suppressed_next_hint_indices:
+                admission_reason += "; next_hints suppressed: premature_termination_risk"
             items.append(
                 ContextPackItem(
                     kind="action_summary",
                     id=summary.summary_id,
-                    text=text,
+                    text=rendered_text,
                     evidence_ids=evidence_ids,
-                    admission_reason="grounded and within budget",
+                    admission_reason=admission_reason,
                 )
             )
         else:

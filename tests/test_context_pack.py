@@ -114,6 +114,22 @@ def test_render_summary_includes_facts_and_hypotheses() -> None:
     assert "HYPOTHESIS: performance bottleneck in parser" in text
 
 
+def test_render_summary_can_exclude_selected_next_hints() -> None:
+    summary = _make_summary(
+        facts=[_fact("main route is src/routes/+page.svelte")],
+        next_hints=[
+            _hint("edit", "Add the same interactive element requested by the task."),
+            _hint("verify", "Run node verify.mjs after editing."),
+        ],
+    )
+
+    text = render_summary(summary, exclude_next_hint_indices={0})
+
+    assert "FACT: main route is src/routes/+page.svelte" in text
+    assert "Add the same interactive element" not in text
+    assert "HINT: verify - Run node verify.mjs after editing." in text
+
+
 def test_render_summary_empty_returns_empty_string() -> None:
     summary = _make_summary()
     assert render_summary(summary) == ""
@@ -427,7 +443,7 @@ def test_build_context_pack_failed_attempt_and_avoid_admitted() -> None:
     assert "AVOID:" in pack.items[0].text
 
 
-def test_build_context_pack_rejects_s2_style_task_overlap_seed() -> None:
+def test_build_context_pack_soft_blocks_s2_style_task_overlap_seed() -> None:
     task_text = (
         "Create a SvelteKit page in src/routes/+page.svelte with at least one "
         "interactive HTML element. Do not use React or Next.js."
@@ -453,17 +469,18 @@ def test_build_context_pack_rejects_s2_style_task_overlap_seed() -> None:
         task_text=task_text,
     )
 
-    assert pack.items == []
-    assert pack.omitted[0].id == "sum-s2-overlap"
-    assert "low_value task overlap" in pack.omitted[0].reason
-    assert "premature_termination_risk" in pack.omitted[0].reason
-    assert decisions[0].decision == "deny"
-    assert decisions[0].policy is not None
-    assert decisions[0].policy.detail_level == "summarize_quality_gate"
+    assert [item.id for item in pack.items] == ["sum-s2-overlap"]
+    assert pack.omitted == []
+    assert "FACT: Repo S2-03 is a SvelteKit project." in pack.items[0].text
+    assert "HINT:" not in pack.items[0].text
+    assert pack.items[0].admission_reason is not None
+    assert "next_hints suppressed: premature_termination_risk" in pack.items[0].admission_reason
+    assert decisions[0].decision == "admit"
+    assert decisions[0].policy is None
     assert pack.warnings[0].kind == "summary_quality_gate"
 
 
-def test_build_context_pack_rejects_japanese_task_english_seed_overlap() -> None:
+def test_build_context_pack_soft_blocks_japanese_task_english_seed_overlap() -> None:
     """Cross-lingual JP task + EN seed should still trip the quality gate.
 
     Regression test for Issue #97: the legacy ASCII-only detector did not
@@ -502,10 +519,11 @@ def test_build_context_pack_rejects_japanese_task_english_seed_overlap() -> None
         task_text=task_text,
     )
 
-    assert pack.items == []
-    assert pack.omitted[0].id == "sum-jp-task-en-seed"
-    assert "premature_termination_risk" in pack.omitted[0].reason
-    assert decisions[0].decision == "deny"
+    assert [item.id for item in pack.items] == ["sum-jp-task-en-seed"]
+    assert pack.omitted == []
+    assert "FACT: Repo S2-03 is a SvelteKit project." in pack.items[0].text
+    assert "HINT:" not in pack.items[0].text
+    assert decisions[0].decision == "admit"
     quality_warnings = [w for w in pack.warnings if w.kind == "summary_quality_gate"]
     assert any("premature_termination_risk" in w.message for w in quality_warnings)
 
@@ -555,10 +573,34 @@ def test_premature_overlap_threshold_can_be_overridden(monkeypatch: pytest.Monke
     assert premature_overlap_threshold() == 0.22
 
 
+def test_quality_gate_reports_suppressed_next_hint_indices() -> None:
+    task_text = (
+        "Create a SvelteKit page in src/routes/+page.svelte with at least one "
+        "interactive HTML element. Do not use React or Next.js."
+    )
+    summary = _make_summary(
+        "sum-suppress-index",
+        facts=[_fact("Repo S2-03 uses SvelteKit and verify.mjs checks the page.")],
+        next_hints=[
+            _hint("edit", "Add an interactive HTML element to the Svelte page."),
+            _hint("verify", "Run node verify.mjs after editing."),
+        ],
+    )
+
+    result = evaluate_summary_quality(summary, task_text)
+
+    assert result.warnings == (
+        "sum-suppress-index: premature_termination_risk: direct next_hint overlaps current task",
+    )
+    assert result.suppressed_next_hint_indices == (0,)
+
+
 def test_realistic_s2_japanese_task_emits_premature_warning() -> None:
     summary = _load_shared_summary("anvil_eval_s2_03_action_summary.json")
     task_text = (
-        "既存のSvelteKit画面を読み、Operations Consoleにステータス切替の操作UIを追加してください。"
+        "src/routes/+page.svelte に SvelteKit のページを作成してください。"
+        "少なくとも1つのインタラクティブな HTML 要素を含めてください。"
+        "React や Next.js は使用しないでください。"
     )
 
     pack, decisions = build_context_pack(
@@ -572,12 +614,16 @@ def test_realistic_s2_japanese_task_emits_premature_warning() -> None:
 
     assert decisions[0].decision == "admit"
     assert [item.id for item in pack.items] == [summary.summary_id]
+    assert "HINT:" not in pack.items[0].text
     assert any("premature_termination_risk" in warning.message for warning in pack.warnings)
 
 
 def test_realistic_s2_english_task_emits_premature_warning() -> None:
     summary = _load_shared_summary("anvil_eval_s2_03_en_action_summary.json")
-    task_text = "Read the existing SvelteKit page and add status toggle UI to Operations Console."
+    task_text = (
+        "Create a SvelteKit page in src/routes/+page.svelte with at least one "
+        "interactive HTML element. Do not use React or Next.js."
+    )
 
     pack, decisions = build_context_pack(
         request_id="req-quality-s2-realistic-en",
@@ -590,6 +636,7 @@ def test_realistic_s2_english_task_emits_premature_warning() -> None:
 
     assert decisions[0].decision == "admit"
     assert [item.id for item in pack.items] == [summary.summary_id]
+    assert "HINT:" not in pack.items[0].text
     assert any("premature_termination_risk" in warning.message for warning in pack.warnings)
 
 
@@ -835,7 +882,7 @@ def test_context_pack_api_auto_search_excludes_stale_and_omits_empty(
     assert omitted_ids == {"sum-empty"}
 
 
-def test_context_pack_api_reports_quality_gate_rejection(tmp_path: Path) -> None:
+def test_context_pack_api_reports_quality_gate_soft_block(tmp_path: Path) -> None:
     ss = SummaryStore(tmp_path / "summaries.sqlite")
     ss.upsert(
         _make_summary(
@@ -862,10 +909,11 @@ def test_context_pack_api_reports_quality_gate_rejection(tmp_path: Path) -> None
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["context_pack"]["items"] == []
-    assert payload["context_pack"]["omitted"][0]["id"] == "sum-s2-api"
-    assert "low_value task overlap" in payload["context_pack"]["omitted"][0]["reason"]
-    assert payload["admission_decisions"][0]["decision"] == "deny"
+    assert payload["context_pack"]["omitted"] == []
+    assert payload["context_pack"]["items"][0]["id"] == "sum-s2-api"
+    assert "FACT: Repo S2-03 is a SvelteKit project." in payload["context_pack"]["items"][0]["text"]
+    assert "HINT:" not in payload["context_pack"]["items"][0]["text"]
+    assert payload["admission_decisions"][0]["decision"] == "admit"
     assert payload["context_pack"]["warnings"][0]["kind"] == "summary_quality_gate"
 
 

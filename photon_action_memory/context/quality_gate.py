@@ -61,6 +61,7 @@ class SummaryQualityGateResult:
     warnings: tuple[str, ...] = ()
     task_overlap: float = 0.0
     novel_ratio: float = 1.0
+    suppressed_next_hint_indices: tuple[int, ...] = ()
 
 
 def evaluate_summary_quality(
@@ -91,16 +92,21 @@ def evaluate_summary_quality(
     novel_ratio = overlap_result.novel
     meta_info = _has_meta_information(summary_text)
     verification_guidance = _has_verification_guidance(summary)
-    premature_risk = _has_premature_termination_risk(summary, task_tokens, mode=mode)
+    suppressed_hint_indices = _premature_termination_next_hint_indices(
+        summary,
+        task_tokens,
+        mode=mode,
+    )
+    premature_risk = bool(suppressed_hint_indices)
 
     warnings: list[str] = []
-    if premature_risk and not (meta_info or verification_guidance):
+    if premature_risk and not meta_info:
         warnings.append(
             f"{summary.summary_id}: premature_termination_risk: "
             "direct next_hint overlaps current task"
         )
 
-    if meta_info or verification_guidance:
+    if meta_info or (verification_guidance and not premature_risk):
         return SummaryQualityGateResult(
             decision="allow",
             warnings=tuple(warnings),
@@ -124,6 +130,7 @@ def evaluate_summary_quality(
             warnings=tuple(warnings),
             task_overlap=overlap,
             novel_ratio=novel_ratio,
+            suppressed_next_hint_indices=suppressed_hint_indices,
         )
 
     return SummaryQualityGateResult(
@@ -131,6 +138,7 @@ def evaluate_summary_quality(
         warnings=tuple(warnings),
         task_overlap=overlap,
         novel_ratio=novel_ratio,
+        suppressed_next_hint_indices=suppressed_hint_indices,
     )
 
 
@@ -166,13 +174,14 @@ def _has_verification_guidance(summary: ActionSummary) -> bool:
     return False
 
 
-def _has_premature_termination_risk(
+def _premature_termination_next_hint_indices(
     summary: ActionSummary,
     task_tokens: set[str],
     *,
     mode: OverlapDetectorMode | None = None,
-) -> bool:
-    for hint in summary.next_hints:
+) -> tuple[int, ...]:
+    risky_indices: list[int] = []
+    for index, hint in enumerate(summary.next_hints):
         if hint.kind.lower() in {"verify", "test", "inspect", "read"}:
             continue
         hint_text = f"{hint.kind} {hint.target or ''} {hint.reason}"
@@ -184,8 +193,8 @@ def _has_premature_termination_risk(
         direct_action = bool(hint_tokens & _DIRECT_NEXT_ACTIONS)
         overlap = len(hint_tokens & task_tokens) / len(hint_tokens)
         if direct_action and overlap >= premature_overlap_threshold():
-            return True
-    return False
+            risky_indices.append(index)
+    return tuple(risky_indices)
 
 
 def premature_overlap_threshold() -> float:

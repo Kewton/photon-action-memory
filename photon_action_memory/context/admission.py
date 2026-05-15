@@ -34,7 +34,12 @@ class ContextAdmissionController:
         self._tracker = tracker
         self._seen: set[str] = set()
 
-    def evaluate(self, summary: ActionSummary) -> tuple[str, str | None]:
+    def evaluate(
+        self,
+        summary: ActionSummary,
+        *,
+        rendered_text: str | None = None,
+    ) -> tuple[str, str | None]:
         """Return (decision, reason) for *summary*."""
         if summary.validity.status in _STALE_STATUSES:
             base_reason = f"summary is {summary.validity.status}"
@@ -48,7 +53,7 @@ class ContextAdmissionController:
         if not has_content:
             return "omit", "no admissible content"
 
-        text = render_summary(summary)
+        text = rendered_text if rendered_text is not None else render_summary(summary)
         normalized = text.strip().lower()
         if normalized in self._seen:
             return "omit", "duplicate content"
@@ -66,10 +71,13 @@ class ContextAdmissionController:
         summary: ActionSummary,
         decision: str,
         reason: str | None,
+        *,
+        rendered_text: str | None = None,
     ) -> ContextAdmissionDecision:
         est_tokens: int | None = None
         if decision == "admit":
-            est_tokens = estimate_tokens(render_summary(summary))
+            text = rendered_text if rendered_text is not None else render_summary(summary)
+            est_tokens = estimate_tokens(text)
         return ContextAdmissionDecision(
             schema_version=DEFAULT_SCHEMA_VERSION_V2,
             decision_id=_decision_id(summary.summary_id),
