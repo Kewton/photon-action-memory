@@ -23,7 +23,7 @@
       "lang": "en"
     },
     {
-      "text": "リポジトリ S1-02 には summarize.py があり、キー alpha, beta, total を持つ JSON を標準出力に出力する。実行コマンドは python3 summarize.py。ファイルは編集しないこと。",
+      "text": "S1-02 は summarize.py を実行するだけのタスク。summarize.py は alpha, beta, total を含む JSON を標準出力に出す。実行は python3 summarize.py。ファイルは変更しない。",
       "evidence_ids": ["anvil-eval-s1-02-ev-001"],
       "confidence": 0.97,
       "lang": "ja"
@@ -43,7 +43,7 @@
     {
       "kind": "action",
       "target": "summarize.py",
-      "reason": "python3 summarize.py を実行し、標準出力をそのまま報告する。ファイル編集は行わない。",
+      "reason": "python3 summarize.py を実行。出力された JSON stdout をそのまま報告。ファイル編集は不要。",
       "confidence": 0.95,
       "lang": "ja"
     }

@@ -23,7 +23,7 @@
       "lang": "en"
     },
     {
-      "text": "リポジトリ S5-01 の tool.py にバグがある。double(x) が x + x ではなく x + x + 1 を返している。修正は return x + x + 1 を return x + x（または return x * 2）に変えること。ANVIL.md は推奨検証コマンドを指定しており、python3 custom_check.py を使う。",
+      "text": "S5-01 は tool.py の double(x) バグ。現状は x + x + 1 を返すが、正解は x + x または x * 2。検証は ANVIL.md の指定どおり python3 custom_check.py。pytest は使わない。",
       "evidence_ids": ["anvil-eval-s5-01-ev-001"],
       "confidence": 0.99,
       "lang": "ja"
@@ -41,7 +41,7 @@
     },
     {
       "action": "pytest で検証する",
-      "reason": "ANVIL.md がこのプロジェクトでは pytest を使わないよう明記している",
+      "reason": "ANVIL.md は python3 custom_check.py を使う前提で、pytest は使わないよう指定している",
       "valid_until": "never",
       "evidence_ids": ["anvil-eval-s5-01-ev-001"],
       "lang": "ja"
@@ -58,7 +58,7 @@
     {
       "kind": "edit",
       "target": "tool.py",
-      "reason": "double(x) を修正する: return x + x + 1 を return x + x に変える。ANVIL.md 推奨の python3 custom_check.py で検証する。",
+      "reason": "tool.py の double(x) を修正。return x + x + 1 を return x + x に変更。検証は python3 custom_check.py。pytest では検証しない。",
       "confidence": 0.97,
       "lang": "ja"
     }

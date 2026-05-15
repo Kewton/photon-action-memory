@@ -52,6 +52,37 @@ CROSS_LINGUAL_EN_SEEDS: dict[str, str] = {
     "anvil_eval_s5_01_en_action_summary.json": "S5-01-en",
 }
 
+JP_PHRASE_EXPECTATIONS: dict[str, tuple[str, ...]] = {
+    "anvil_eval_s1_02_action_summary.json": (
+        "python3 summarize.py を実行",
+        "ファイル編集は不要",
+    ),
+    "anvil_eval_s2_03_action_summary.json": (
+        "status toggle UI",
+        "React / Next.js は使わず",
+    ),
+    "anvil_eval_s3_01_action_summary.json": (
+        "calculator.py の add() を修正",
+        "return a - b を return a + b に変更",
+    ),
+    "anvil_eval_s3_03_action_summary.json": (
+        "invoice.py を中心に修正",
+        "subtotal(items) * (1 + TAX_RATE)",
+    ),
+    "anvil_eval_s3_04_action_summary.json": (
+        "slugify.py の slugify() を修正",
+        "replace(' ', '_') を replace(' ', '-') に変更",
+    ),
+    "anvil_eval_s5_01_action_summary.json": (
+        "検証は python3 custom_check.py",
+        "pytest では検証しない",
+    ),
+    "anvil_eval_s6_04_action_summary.json": (
+        "AKIA 形式の値はすべて [REDACTED]",
+        "生のキー値は出力しない",
+    ),
+}
+
 _JA_CHAR_RE = re.compile(r"[぀-ヿ㐀-鿿]")
 
 
@@ -63,6 +94,22 @@ def _load(filename: str) -> dict[str, object]:
 
 def _langs(entries: list[dict[str, object]]) -> set[str]:
     return {str(entry.get("lang")) for entry in entries if entry.get("lang")}
+
+
+def _jp_text(raw: dict[str, object]) -> str:
+    values: list[str] = []
+    for section in ("facts", "next_hints", "avoid"):
+        entries = raw.get(section) or []
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("lang") != "ja":
+                continue
+            for field in ("text", "reason", "action"):
+                value = entry.get(field)
+                if isinstance(value, str):
+                    values.append(value)
+    return "\n".join(values)
 
 
 @pytest.mark.parametrize("filename", SEED_FILES)
@@ -137,6 +184,15 @@ def test_seed_script_references_all_fixtures() -> None:
     contents = SEED_SCRIPT.read_text(encoding="utf-8")
     for filename in SEED_FILES:
         assert filename in contents, f"seed script must reference {filename}"
+
+
+@pytest.mark.parametrize(("filename", "phrases"), JP_PHRASE_EXPECTATIONS.items())
+def test_japanese_seed_phrasing_keeps_actionable_terms(
+    filename: str, phrases: tuple[str, ...]
+) -> None:
+    text = _jp_text(_load(filename))
+    for phrase in phrases:
+        assert phrase in text, f"{filename} JP text must include actionable phrase: {phrase}"
 
 
 @pytest.mark.parametrize(("filename", "repo_id"), CROSS_LINGUAL_EN_SEEDS.items())
