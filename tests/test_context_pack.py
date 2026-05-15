@@ -11,8 +11,10 @@ Acceptance criteria covered:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from photon_action_memory.api.schema_v2 import (
@@ -31,6 +33,10 @@ from photon_action_memory.api.server import create_app
 from photon_action_memory.context.admission import ContextAdmissionController
 from photon_action_memory.context.budget import TokenBudgetTracker
 from photon_action_memory.context.pack import build_context_pack
+from photon_action_memory.context.quality_gate import (
+    evaluate_summary_quality,
+    premature_overlap_threshold,
+)
 from photon_action_memory.context.render import estimate_tokens, render_summary
 from photon_action_memory.memory.sanitizer import REDACTED_SECRET
 from photon_action_memory.memory.store import SQLiteEventStore
@@ -39,6 +45,8 @@ from photon_action_memory.memory.summary_store import SummaryStore
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+SHARED_FIXTURES = Path(__file__).parent / "fixtures" / "shared"
 
 
 def _make_summary(
@@ -84,6 +92,11 @@ def _failed(action: str) -> FailedAttempt:
 
 def _hint(kind: str, reason: str, target: str | None = None) -> NextHint:
     return NextHint(kind=kind, target=target, reason=reason, confidence=0.8)
+
+
+def _load_shared_summary(filename: str) -> ActionSummary:
+    raw = json.loads((SHARED_FIXTURES / filename).read_text(encoding="utf-8"))
+    return ActionSummary.model_validate(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +540,96 @@ def test_build_context_pack_keeps_s5_style_meta_information_seed() -> None:
     assert pack.omitted == []
     assert decisions[0].decision == "admit"
     assert "custom_check.py" in pack.items[0].text
+    assert pack.warnings == []
+
+
+def test_premature_overlap_threshold_defaults_to_realistic_anvil_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PHOTON_PREMATURE_OVERLAP_THRESHOLD", raising=False)
+    assert premature_overlap_threshold() == 0.15
+
+
+def test_premature_overlap_threshold_can_be_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PHOTON_PREMATURE_OVERLAP_THRESHOLD", "0.22")
+    assert premature_overlap_threshold() == 0.22
+
+
+def test_realistic_s2_japanese_task_emits_premature_warning() -> None:
+    summary = _load_shared_summary("anvil_eval_s2_03_action_summary.json")
+    task_text = (
+        "既存のSvelteKit画面を読み、Operations Consoleにステータス切替の操作UIを追加してください。"
+    )
+
+    pack, decisions = build_context_pack(
+        request_id="req-quality-s2-realistic-jp",
+        session_id=None,
+        repo_id=summary.repo_id,
+        summaries=[summary],
+        budget=ContextPackBudget(),
+        task_text=task_text,
+    )
+
+    assert decisions[0].decision == "admit"
+    assert [item.id for item in pack.items] == [summary.summary_id]
+    assert any("premature_termination_risk" in warning.message for warning in pack.warnings)
+
+
+def test_realistic_s2_english_task_emits_premature_warning() -> None:
+    summary = _load_shared_summary("anvil_eval_s2_03_en_action_summary.json")
+    task_text = "Read the existing SvelteKit page and add status toggle UI to Operations Console."
+
+    pack, decisions = build_context_pack(
+        request_id="req-quality-s2-realistic-en",
+        session_id=None,
+        repo_id=summary.repo_id,
+        summaries=[summary],
+        budget=ContextPackBudget(),
+        task_text=task_text,
+    )
+
+    assert decisions[0].decision == "admit"
+    assert [item.id for item in pack.items] == [summary.summary_id]
+    assert any("premature_termination_risk" in warning.message for warning in pack.warnings)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "anvil_eval_s5_01_action_summary.json",
+        "anvil_eval_s5_01_en_action_summary.json",
+    ],
+)
+def test_realistic_s5_meta_seed_does_not_emit_premature_warning(filename: str) -> None:
+    summary = _load_shared_summary(filename)
+    task_text = (
+        "verify.py が通るように tool.py を修正してください。テストが通るまで確認してください。"
+    )
+
+    pack, decisions = build_context_pack(
+        request_id=f"req-quality-s5-{summary.repo_id}",
+        session_id=None,
+        repo_id=summary.repo_id,
+        summaries=[summary],
+        budget=ContextPackBudget(),
+        task_text=task_text,
+    )
+
+    assert decisions[0].decision == "admit"
+    assert [item.id for item in pack.items] == [summary.summary_id]
+    assert pack.warnings == []
+
+
+def test_realistic_s3_specific_bugfix_seed_does_not_emit_premature_warning() -> None:
+    summary = _load_shared_summary("anvil_eval_s3_01_action_summary.json")
+    task_text = (
+        "calculator.py の add 関数を修正してください。verify.py が通るまで確認してください。"
+    )
+
+    result = evaluate_summary_quality(summary, task_text)
+
+    assert result.decision == "allow"
+    assert result.warnings == ()
 
 
 # ---------------------------------------------------------------------------
