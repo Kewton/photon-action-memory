@@ -53,10 +53,6 @@ from photon_action_memory.api.schema_v2 import (
     UniversalFilters,
 )
 from photon_action_memory.context.pack import build_context_pack
-from photon_action_memory.governance.contradiction import (
-    ContradictionPair,
-    detect_contradictions,
-)
 from photon_action_memory.context.raw_policy import (
     RawEvidenceItem,
     evaluate_raw_item,
@@ -64,6 +60,10 @@ from photon_action_memory.context.raw_policy import (
 )
 from photon_action_memory.context.render import estimate_tokens, render_summary
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
+from photon_action_memory.governance.contradiction import (
+    ContradictionPair,
+    detect_contradictions,
+)
 from photon_action_memory.memory.chunks import ActionChunker
 from photon_action_memory.memory.evidence import EvidenceExpander
 from photon_action_memory.memory.retrieval import (

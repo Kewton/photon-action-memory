@@ -19,7 +19,6 @@ from photon_action_memory.cli.audit import build_contradiction_payload
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.memory.summary_store import SummaryStore
 
-
 REPO_ID = "audit-repo"
 TASK_SIGNATURE = "audit-task"
 
