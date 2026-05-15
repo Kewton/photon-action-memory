@@ -31,6 +31,7 @@ from photon_action_memory.memory.summary_store import SummaryStore
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SHARED = REPO_ROOT / "tests" / "fixtures" / "shared"
 SEED_SCRIPT = REPO_ROOT / "scripts" / "seed_expanded_eval_scenarios.sh"
+COMMON_SEED_SCRIPT = REPO_ROOT / "scripts" / "seed_common_seeds.sh"
 
 SEED_FILES: tuple[str, ...] = (
     "anvil_eval_s1_02_action_summary.json",
@@ -51,6 +52,12 @@ CROSS_LINGUAL_EN_SEEDS: dict[str, str] = {
     "anvil_eval_s3_01_en_action_summary.json": "S3-01-en",
     "anvil_eval_s5_01_en_action_summary.json": "S5-01-en",
 }
+
+COMMON_SEED_FILES: tuple[str, ...] = (
+    "common_pytest_action_summary.json",
+    "common_rust_error_handling_action_summary.json",
+    "common_sveltekit_vs_react_action_summary.json",
+)
 
 JP_PHRASE_EXPECTATIONS: dict[str, tuple[str, ...]] = {
     "anvil_eval_s1_02_action_summary.json": (
@@ -184,6 +191,23 @@ def test_seed_script_references_all_fixtures() -> None:
     contents = SEED_SCRIPT.read_text(encoding="utf-8")
     for filename in SEED_FILES:
         assert filename in contents, f"seed script must reference {filename}"
+    assert "seed_common_seeds.sh" in contents
+
+
+@pytest.mark.parametrize("filename", COMMON_SEED_FILES)
+def test_common_seed_validates_as_action_summary(filename: str) -> None:
+    raw = _load(filename)
+    summary = ActionSummary.model_validate(raw)
+    assert summary.repo_id == "__common__"
+    assert summary.task_signature
+    assert summary.facts
+
+
+def test_common_seed_script_references_common_fixtures() -> None:
+    assert COMMON_SEED_SCRIPT.exists(), "seed_common_seeds.sh must exist"
+    contents = COMMON_SEED_SCRIPT.read_text(encoding="utf-8")
+    for filename in COMMON_SEED_FILES:
+        assert filename in contents, f"common seed script must reference {filename}"
 
 
 @pytest.mark.parametrize(("filename", "phrases"), JP_PHRASE_EXPECTATIONS.items())

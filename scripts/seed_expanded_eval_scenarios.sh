@@ -33,3 +33,6 @@ for entry in "${SEEDS[@]}"; do
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['status'])"
 done
 echo "=== Done ==="
+
+echo "=== Seeding common cross-repo memories ==="
+"$SCRIPT_DIR/seed_common_seeds.sh"

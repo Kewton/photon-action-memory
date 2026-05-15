@@ -56,7 +56,10 @@ from photon_action_memory.context.raw_policy import (
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 from photon_action_memory.memory.chunks import ActionChunker
 from photon_action_memory.memory.evidence import EvidenceExpander
-from photon_action_memory.memory.retrieval import SummaryRetriever
+from photon_action_memory.memory.retrieval import (
+    SummaryRetriever,
+    merge_dedup_summaries,
+)
 from photon_action_memory.memory.sanitizer import sanitize_text_with_report
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.memory.summaries import (
@@ -743,18 +746,24 @@ def _resolve_context_summaries(
     *,
     repo_id: str | None,
 ) -> list[ActionSummary]:
-    """Resolve summaries for a context pack without falling back across repos."""
+    """Resolve summaries with repo-specific results before common seed fallback."""
     if request.candidate_summary_ids:
         return retriever.resolve_candidates(request.candidate_summary_ids)
-    if repo_id is None:
-        return []
 
     task_signature = _context_task_signature(request)
-    if task_signature is not None:
+    results: list[ActionSummary] = []
+    if repo_id is not None and task_signature is not None:
         task_matches = retriever.search(repo_id=repo_id, task_signature=task_signature)
         if task_matches:
-            return task_matches
-    return retriever.search(repo_id=repo_id)
+            results = merge_dedup_summaries(results, task_matches)
+    if repo_id is not None and not results:
+        results = merge_dedup_summaries(results, retriever.search(repo_id=repo_id))
+    if task_signature is not None:
+        results = merge_dedup_summaries(
+            results,
+            retriever.search_common(task_signature=task_signature),
+        )
+    return results
 
 
 def _context_repo_id(request: ContextPackRequest) -> str | None:

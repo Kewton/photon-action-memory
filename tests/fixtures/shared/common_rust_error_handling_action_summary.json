@@ -1,0 +1,38 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "photon-common-rust-result-handling",
+  "session_id": "common-seed",
+  "repo_id": "__common__",
+  "task_signature": "rust-error-handling",
+  "summary_level": "case",
+  "facts": [
+    {
+      "text": "Rust's ? operator can only be used in functions that return Result, Option, or another compatible Try type.",
+      "evidence_ids": ["common-rust-ev-001"],
+      "confidence": 0.95
+    }
+  ],
+  "avoid": [
+    {
+      "action": "replace recoverable errors with panic! in library code",
+      "reason": "Result-based propagation keeps callers able to handle errors.",
+      "evidence_ids": ["common-rust-ev-001"]
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "verify",
+      "target": "cargo clippy --all-targets",
+      "reason": "Run clippy after changing Rust error-handling paths.",
+      "confidence": 0.85
+    }
+  ],
+  "token_cost": {
+    "estimated_summary_tokens": 48,
+    "estimated_raw_tokens": 360,
+    "tokens_saved_vs_raw": 312
+  },
+  "validity": {
+    "status": "valid"
+  }
+}

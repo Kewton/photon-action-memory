@@ -1,0 +1,38 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "photon-common-sveltekit-vs-react",
+  "session_id": "common-seed",
+  "repo_id": "__common__",
+  "task_signature": "sveltekit-route-edit",
+  "summary_level": "case",
+  "facts": [
+    {
+      "text": "SvelteKit route pages use .svelte files and native Svelte syntax; React and Next.js components are not interchangeable with Svelte route components.",
+      "evidence_ids": ["common-sveltekit-ev-001"],
+      "confidence": 0.95
+    }
+  ],
+  "avoid": [
+    {
+      "action": "add React or Next.js component patterns to a SvelteKit route page",
+      "reason": "SvelteKit fixtures expect native Svelte component syntax.",
+      "evidence_ids": ["common-sveltekit-ev-001"]
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "inspect",
+      "target": "src/routes/+page.svelte",
+      "reason": "Read the existing Svelte page before editing route UI.",
+      "confidence": 0.85
+    }
+  ],
+  "token_cost": {
+    "estimated_summary_tokens": 58,
+    "estimated_raw_tokens": 420,
+    "tokens_saved_vs_raw": 362
+  },
+  "validity": {
+    "status": "valid"
+  }
+}
