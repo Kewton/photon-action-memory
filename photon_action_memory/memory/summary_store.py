@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from photon_action_memory.api.schema_v2 import ActionSummary
+from photon_action_memory.api.schema_v2 import ActionSummary, UniversalFilters
 from photon_action_memory.eval.summary_feedback import (
     SummaryFeedbackRecord,
     classify_outcome,
@@ -120,6 +120,34 @@ class SummaryStore:
         params.append(limit)
         rows = self._connection.execute(query, params).fetchall()
         return [ActionSummary.model_validate_json(row["payload_json"]) for row in rows]
+
+    def search_universal(
+        self,
+        *,
+        filters: UniversalFilters | None = None,
+        limit: int = 50,
+    ) -> list[ActionSummary]:
+        """Return universal-scope summaries matching detected context filters."""
+        if limit < 1:
+            msg = "limit must be >= 1"
+            raise ValueError(msg)
+        rows = self._connection.execute(
+            """
+            SELECT payload_json FROM action_summaries
+            WHERE validity_status = 'valid'
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        summaries = [ActionSummary.model_validate_json(row["payload_json"]) for row in rows]
+        universal = [
+            summary
+            for summary in summaries
+            if summary.applicability_scope == "universal"
+            and _matches_universal_filters(summary, filters)
+        ]
+        return sorted(universal, key=_universal_sort_key)
 
     def count(self) -> int:
         row = self._connection.execute("SELECT COUNT(*) AS cnt FROM action_summaries").fetchone()
@@ -276,6 +304,42 @@ def _row_to_feedback(row: sqlite3.Row | None) -> SummaryFeedbackRecord | None:
         expand_request_count=int(row["expand_request_count"]),
         quality_turns=int(row["quality_turns"]),
     )
+
+
+def _matches_universal_filters(
+    summary: ActionSummary,
+    filters: UniversalFilters | None,
+) -> bool:
+    metadata = summary.universal_metadata
+    if metadata is None:
+        return True
+    wanted = filters or UniversalFilters()
+    fields = ("language", "framework", "tool", "os")
+    has_declared_filter = False
+    has_match = False
+    for field in fields:
+        declared = _lower_set(getattr(metadata, field) or [])
+        if not declared:
+            continue
+        has_declared_filter = True
+        requested = _lower_set(getattr(wanted, field))
+        if declared & requested:
+            has_match = True
+    if not has_declared_filter:
+        return True
+    return has_match
+
+
+def _lower_set(values: list[str]) -> set[str]:
+    return {value.strip().lower() for value in values if value.strip()}
+
+
+def _universal_sort_key(summary: ActionSummary) -> tuple[int, str]:
+    severity = "info"
+    if summary.universal_metadata is not None:
+        severity = str(summary.universal_metadata.severity).lower()
+    priority = {"critical": 0, "warning": 1, "info": 2}.get(severity, 2)
+    return (priority, summary.summary_id)
 
 
 __all__ = ["SummaryStore"]

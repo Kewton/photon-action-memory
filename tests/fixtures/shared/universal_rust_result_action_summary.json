@@ -1,0 +1,29 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-rust-result-handling",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["rust"],
+    "tool": ["cargo"],
+    "severity": "warning",
+    "token_budget_cap": 90
+  },
+  "facts": [
+    {
+      "text": "Rust's ? operator can only be used where the enclosing function returns Result, Option, or another compatible Try type.",
+      "evidence_ids": ["universal-rust-result-ev-001"],
+      "confidence": 0.95
+    }
+  ],
+  "avoid": [
+    {
+      "action": "replace recoverable errors with panic! in library code",
+      "reason": "Result propagation lets callers handle failure.",
+      "evidence_ids": ["universal-rust-result-ev-001"]
+    }
+  ],
+  "validity": { "status": "valid" }
+}

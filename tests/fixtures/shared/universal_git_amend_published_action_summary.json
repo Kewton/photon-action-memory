@@ -1,0 +1,28 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-git-amend-published",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "tool": ["git"],
+    "severity": "critical",
+    "token_budget_cap": 80
+  },
+  "facts": [
+    {
+      "text": "git commit --amend rewrites the current commit and should not be used on published commits without explicit coordination.",
+      "evidence_ids": ["universal-git-amend-ev-001"],
+      "confidence": 0.95
+    }
+  ],
+  "avoid": [
+    {
+      "action": "amend a commit that has already been pushed",
+      "reason": "Rewriting published history can disrupt collaborators.",
+      "evidence_ids": ["universal-git-amend-ev-001"]
+    }
+  ],
+  "validity": { "status": "valid" }
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-python-pathlib",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["python"],
+    "severity": "info",
+    "token_budget_cap": 80
+  },
+  "facts": [
+    {
+      "text": "pathlib.Path keeps path joins portable across Linux, macOS, and Windows.",
+      "evidence_ids": ["universal-python-pathlib-ev-001"],
+      "confidence": 0.9
+    }
+  ],
+  "avoid": [
+    {
+      "action": "build paths by string concatenation",
+      "reason": "Manual separators are easy to break on another operating system.",
+      "evidence_ids": ["universal-python-pathlib-ev-001"]
+    }
+  ],
+  "validity": { "status": "valid" }
+}

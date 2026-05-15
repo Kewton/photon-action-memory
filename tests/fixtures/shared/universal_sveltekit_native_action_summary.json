@@ -1,0 +1,29 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-sveltekit-native",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["svelte"],
+    "framework": ["sveltekit"],
+    "severity": "warning",
+    "token_budget_cap": 90
+  },
+  "facts": [
+    {
+      "text": "SvelteKit route pages use .svelte files and native Svelte syntax rather than React component syntax.",
+      "evidence_ids": ["universal-sveltekit-ev-001"],
+      "confidence": 0.95
+    }
+  ],
+  "avoid": [
+    {
+      "action": "insert React or Next.js component patterns into a Svelte route",
+      "reason": "Svelte templates compile differently from JSX.",
+      "evidence_ids": ["universal-sveltekit-ev-001"]
+    }
+  ],
+  "validity": { "status": "valid" }
+}

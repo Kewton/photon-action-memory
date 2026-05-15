@@ -36,3 +36,6 @@ echo "=== Done ==="
 
 echo "=== Seeding common cross-repo memories ==="
 "$SCRIPT_DIR/seed_common_seeds.sh"
+
+echo "=== Seeding universal memories ==="
+"$SCRIPT_DIR/seed_universal_seeds.sh"

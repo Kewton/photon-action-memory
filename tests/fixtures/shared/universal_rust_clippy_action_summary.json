@@ -1,0 +1,30 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-rust-clippy",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["rust"],
+    "tool": ["cargo"],
+    "severity": "info",
+    "token_budget_cap": 70
+  },
+  "facts": [
+    {
+      "text": "cargo clippy --all-targets checks library, binary, test, and example targets.",
+      "evidence_ids": ["universal-rust-clippy-ev-001"],
+      "confidence": 0.9
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "verify",
+      "target": "cargo clippy --all-targets",
+      "reason": "Run clippy broadly after changing Rust code.",
+      "confidence": 0.85
+    }
+  ],
+  "validity": { "status": "valid" }
+}

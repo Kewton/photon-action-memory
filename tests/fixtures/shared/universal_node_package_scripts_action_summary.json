@@ -1,0 +1,22 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-node-package-scripts",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["javascript", "typescript"],
+    "tool": ["node", "npm", "pnpm"],
+    "severity": "info",
+    "token_budget_cap": 80
+  },
+  "facts": [
+    {
+      "text": "package.json scripts define project-local commands; prefer the existing package manager lockfile when choosing npm or pnpm.",
+      "evidence_ids": ["universal-node-scripts-ev-001"],
+      "confidence": 0.9
+    }
+  ],
+  "validity": { "status": "valid" }
+}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from photon_action_memory.api.schema_v2 import ActionSummary
+from photon_action_memory.api.schema_v2 import ActionSummary, UniversalFilters
 from photon_action_memory.memory.staleness import StalenessContext, StalenessGuard
 from photon_action_memory.memory.summary_store import SummaryStore
 
@@ -64,6 +64,17 @@ class SummaryRetriever:
             staleness_context=staleness_context,
             limit=limit,
         )
+
+    def search_universal(
+        self,
+        *,
+        filters: UniversalFilters,
+        staleness_context: StalenessContext | None = None,
+        limit: int = 50,
+    ) -> list[ActionSummary]:
+        """Search universal-scope seeds, then apply staleness filtering."""
+        summaries = self._store.search_universal(filters=filters, limit=limit)
+        return self._filter_stale(summaries, staleness_context)
 
     def _filter_stale(
         self,
