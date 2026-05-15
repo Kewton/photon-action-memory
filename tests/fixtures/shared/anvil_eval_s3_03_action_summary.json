@@ -23,7 +23,7 @@
       "lang": "en"
     },
     {
-      "text": "リポジトリ S3-03 には Python ファイルが 2 つある: prices.py は TAX_RATE = 0.10 と subtotal(items) を定義し、invoice.py は total(items) で subtotal を呼ぶが TAX_RATE を無視している。バグは total() に税を適用していないこと。修正は invoice.py で prices から TAX_RATE を import し、return subtotal(items) * (1 + TAX_RATE) に変更すること。確認は python3 verify.py。",
+      "text": "S3-03 は prices.py と invoice.py の連携バグ。prices.py は TAX_RATE = 0.10 と subtotal(items) を定義。invoice.py の total(items) は subtotal を呼ぶが TAX_RATE を適用していない。invoice.py で prices から TAX_RATE を import し、return subtotal(items) * (1 + TAX_RATE) に変更。検証は python3 verify.py。",
       "evidence_ids": ["anvil-eval-s3-03-ev-001"],
       "confidence": 0.99,
       "lang": "ja"
@@ -43,7 +43,7 @@
     {
       "kind": "edit",
       "target": "invoice.py",
-      "reason": "prices から TAX_RATE を import し、total() が subtotal(items) * (1 + TAX_RATE) を返すように修正する。prices.py / invoice.py の両方の編集が必要な場合がある。python3 verify.py で確認する。",
+      "reason": "invoice.py を中心に修正。prices から TAX_RATE を import し、total() が subtotal(items) * (1 + TAX_RATE) を返すように変更。必要なら prices.py も確認し、python3 verify.py で検証。",
       "confidence": 0.97,
       "lang": "ja"
     }

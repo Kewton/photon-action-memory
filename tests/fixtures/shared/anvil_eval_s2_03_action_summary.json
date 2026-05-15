@@ -23,7 +23,7 @@
       "lang": "en"
     },
     {
-      "text": "リポジトリ S2-03 は SvelteKit プロジェクト。メインページは src/routes/+page.svelte。verify.mjs は button / select / input / textarea などインタラクティブ HTML 要素が 1 つ以上含まれ、かつ React / Next.js を使っていないことを検査する。",
+      "text": "S2-03 は SvelteKit プロジェクト。編集先は既存の src/routes/+page.svelte。verify.mjs は native HTML の button / select / input / textarea などの操作UIが 1 つ以上あること、React / Next.js を使っていないことを検査する。",
       "evidence_ids": ["anvil-eval-s2-03-ev-001"],
       "confidence": 0.97,
       "lang": "ja"
@@ -58,7 +58,7 @@
     {
       "kind": "edit",
       "target": "src/routes/+page.svelte",
-      "reason": "既存の +page.svelte に Svelte ネイティブのインタラクティブ要素（例: <button>）を追加する。node verify.mjs で確認する。",
+      "reason": "src/routes/+page.svelte を編集。Svelte native の button / select / input / textarea などで status toggle UI を既存ページに追加。React / Next.js は使わず、node verify.mjs で確認。",
       "confidence": 0.93,
       "lang": "ja"
     }

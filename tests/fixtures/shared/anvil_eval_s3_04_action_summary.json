@@ -23,7 +23,7 @@
       "lang": "en"
     },
     {
-      "text": "リポジトリ S3-04 の slugify.py にバグがある。slugify() は replace(' ', '_') を使っているが、テストはアンダースコアではなくハイフンを期待している（例: 'hello-local-llm'、'hello_local_llm' ではない）。修正は replace(' ', '_') を replace(' ', '-') に変えること。確認は python3 verify.py。",
+      "text": "S3-04 は slugify.py の slugify() バグ。現状は replace(' ', '_') で underscore に変換するが、テスト期待値は hyphen（例: 'hello-local-llm'）。修正は replace(' ', '_') を replace(' ', '-') に変更。検証は python3 verify.py。",
       "evidence_ids": ["anvil-eval-s3-04-ev-001"],
       "confidence": 0.99,
       "lang": "ja"
@@ -43,7 +43,7 @@
     {
       "kind": "edit",
       "target": "slugify.py",
-      "reason": "slugify() の replace(' ', '_') を replace(' ', '-') に変更する。python3 verify.py で確認する。",
+      "reason": "slugify.py の slugify() を修正。replace(' ', '_') を replace(' ', '-') に変更し、python3 verify.py で確認。",
       "confidence": 0.97,
       "lang": "ja"
     }

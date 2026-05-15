@@ -23,7 +23,7 @@
       "lang": "en"
     },
     {
-      "text": "リポジトリ S3-01 の calculator.py にバグがある。add() が a + b ではなく a - b を返している。修正方法は return a - b を return a + b に変えること。確認は python3 verify.py で行う。",
+      "text": "S3-01 は calculator.py の add() バグ。現状は a + b ではなく a - b を返す。修正は return a - b を return a + b に変更。検証は python3 verify.py。",
       "evidence_ids": ["anvil-eval-s3-01-ev-001"],
       "confidence": 0.99,
       "lang": "ja"
@@ -43,7 +43,7 @@
     {
       "kind": "edit",
       "target": "calculator.py",
-      "reason": "add() 関数を修正する: return a - b を return a + b に変える。python3 verify.py で確認する。",
+      "reason": "calculator.py の add() を修正。return a - b を return a + b に変更。python3 verify.py で確認。",
       "confidence": 0.97,
       "lang": "ja"
     }
