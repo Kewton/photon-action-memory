@@ -1,0 +1,31 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-pytest-verbose",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["python"],
+    "framework": ["pytest"],
+    "tool": ["pytest"],
+    "severity": "info",
+    "token_budget_cap": 80
+  },
+  "facts": [
+    {
+      "text": "pytest -v enables verbose test output, and -x stops after the first failing test.",
+      "evidence_ids": ["universal-pytest-ev-001"],
+      "confidence": 0.95
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "verify",
+      "target": "pytest -v -x",
+      "reason": "Use verbose fail-fast pytest runs when reproducing a specific failure.",
+      "confidence": 0.85
+    }
+  ],
+  "validity": { "status": "valid" }
+}

@@ -44,6 +44,9 @@ embedding = [
 [project.urls]
 Homepage = "https://github.com/kewton/photon-action-memory"
 
+[project.scripts]
+photon-seed-add = "photon_action_memory.cli.seed_add:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["photon_action_memory"]
 

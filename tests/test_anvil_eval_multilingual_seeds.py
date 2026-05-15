@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SHARED = REPO_ROOT / "tests" / "fixtures" / "shared"
 SEED_SCRIPT = REPO_ROOT / "scripts" / "seed_expanded_eval_scenarios.sh"
 COMMON_SEED_SCRIPT = REPO_ROOT / "scripts" / "seed_common_seeds.sh"
+UNIVERSAL_SEED_SCRIPT = REPO_ROOT / "scripts" / "seed_universal_seeds.sh"
 
 SEED_FILES: tuple[str, ...] = (
     "anvil_eval_s1_02_action_summary.json",
@@ -57,6 +58,19 @@ COMMON_SEED_FILES: tuple[str, ...] = (
     "common_pytest_action_summary.json",
     "common_rust_error_handling_action_summary.json",
     "common_sveltekit_vs_react_action_summary.json",
+)
+
+UNIVERSAL_SEED_FILES: tuple[str, ...] = (
+    "universal_pytest_verbose_action_summary.json",
+    "universal_python_pathlib_action_summary.json",
+    "universal_fastapi_pydantic_action_summary.json",
+    "universal_rust_result_action_summary.json",
+    "universal_rust_clippy_action_summary.json",
+    "universal_node_package_scripts_action_summary.json",
+    "universal_sveltekit_native_action_summary.json",
+    "universal_git_amend_published_action_summary.json",
+    "universal_git_worktree_action_summary.json",
+    "universal_macos_mlx_action_summary.json",
 )
 
 JP_PHRASE_EXPECTATIONS: dict[str, tuple[str, ...]] = {
@@ -192,6 +206,7 @@ def test_seed_script_references_all_fixtures() -> None:
     for filename in SEED_FILES:
         assert filename in contents, f"seed script must reference {filename}"
     assert "seed_common_seeds.sh" in contents
+    assert "seed_universal_seeds.sh" in contents
 
 
 @pytest.mark.parametrize("filename", COMMON_SEED_FILES)
@@ -208,6 +223,23 @@ def test_common_seed_script_references_common_fixtures() -> None:
     contents = COMMON_SEED_SCRIPT.read_text(encoding="utf-8")
     for filename in COMMON_SEED_FILES:
         assert filename in contents, f"common seed script must reference {filename}"
+
+
+@pytest.mark.parametrize("filename", UNIVERSAL_SEED_FILES)
+def test_universal_seed_validates_as_action_summary(filename: str) -> None:
+    raw = _load(filename)
+    summary = ActionSummary.model_validate(raw)
+    assert summary.schema_version == "action-memory.v0.3"
+    assert summary.applicability_scope == "universal"
+    assert summary.universal_metadata is not None
+    assert summary.facts
+
+
+def test_universal_seed_script_references_universal_fixtures() -> None:
+    assert UNIVERSAL_SEED_SCRIPT.exists(), "seed_universal_seeds.sh must exist"
+    contents = UNIVERSAL_SEED_SCRIPT.read_text(encoding="utf-8")
+    for filename in UNIVERSAL_SEED_FILES:
+        assert filename in contents, f"universal seed script must reference {filename}"
 
 
 @pytest.mark.parametrize(("filename", "phrases"), JP_PHRASE_EXPECTATIONS.items())

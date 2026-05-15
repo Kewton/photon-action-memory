@@ -1,0 +1,30 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-fastapi-pydantic",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["python"],
+    "framework": ["fastapi", "pydantic"],
+    "severity": "warning",
+    "token_budget_cap": 90
+  },
+  "facts": [
+    {
+      "text": "FastAPI request and response bodies are validated through Pydantic models.",
+      "evidence_ids": ["universal-fastapi-pydantic-ev-001"],
+      "confidence": 0.9
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "verify",
+      "target": "schema validation tests",
+      "reason": "Exercise both accepted and rejected request payloads after schema changes.",
+      "confidence": 0.8
+    }
+  ],
+  "validity": { "status": "valid" }
+}

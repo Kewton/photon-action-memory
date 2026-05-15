@@ -1,0 +1,23 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-macos-mlx",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "language": ["python"],
+    "os": ["darwin"],
+    "tool": ["mlx"],
+    "severity": "warning",
+    "token_budget_cap": 90
+  },
+  "facts": [
+    {
+      "text": "MLX smoke tests are macOS-specific and should stay opt-in outside dedicated macOS workflows.",
+      "evidence_ids": ["universal-macos-mlx-ev-001"],
+      "confidence": 0.9
+    }
+  ],
+  "validity": { "status": "valid" }
+}

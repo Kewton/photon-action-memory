@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,7 @@ from photon_action_memory.api.schema_v2 import (
     SummaryValidationResult,
     TokenBudget,
     TokenCost,
+    UniversalFilters,
 )
 from photon_action_memory.context.pack import build_context_pack
 from photon_action_memory.context.raw_policy import (
@@ -53,6 +55,7 @@ from photon_action_memory.context.raw_policy import (
     evaluate_raw_item,
     has_sensitive_content,
 )
+from photon_action_memory.context.render import estimate_tokens, render_summary
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 from photon_action_memory.memory.chunks import ActionChunker
 from photon_action_memory.memory.evidence import EvidenceExpander
@@ -71,6 +74,9 @@ from photon_action_memory.memory.summary_store import SummaryStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
 from photon_action_memory.ranking.guards import fallback_warnings
+
+_UNIVERSAL_MAX_ITEMS = 5
+_UNIVERSAL_MAX_TOKENS = 500
 
 
 class SummaryUpsertRequest(SidecarModel):
@@ -763,7 +769,117 @@ def _resolve_context_summaries(
             results,
             retriever.search_common(task_signature=task_signature),
         )
+    universal = _select_universal_summaries(
+        retriever.search_universal(filters=detect_universal_filters(request))
+    )
+    results = merge_dedup_summaries(results, universal)
     return results
+
+
+def detect_universal_filters(request: ContextPackRequest) -> UniversalFilters:
+    """Detect language/framework/tool/os filters for universal seed retrieval."""
+    text = _universal_detection_text(request)
+    touched = " ".join(request.working_memory.touched_files)
+    return UniversalFilters(
+        language=sorted(_detect_languages(text, touched)),
+        framework=sorted(_detect_frameworks(text, touched)),
+        tool=sorted(_detect_tools(text, touched)),
+        os=sorted(_detect_operating_systems(text)),
+    )
+
+
+def _universal_detection_text(request: ContextPackRequest) -> str:
+    parts = [
+        request.task.user_request,
+        request.task.summary or "",
+        request.working_memory.active_task or "",
+        " ".join(request.working_memory.constraints),
+        " ".join(request.working_memory.unresolved_errors),
+        " ".join(request.working_memory.notes),
+        " ".join(request.working_memory.touched_files),
+    ]
+    return "\n".join(part for part in parts if part).lower()
+
+
+def _detect_languages(text: str, touched_files: str) -> set[str]:
+    languages: set[str] = set()
+    markers = {
+        "python": ("python", "pytest", "pydantic", "fastapi", ".py"),
+        "rust": ("rust", "cargo", "clippy", ".rs"),
+        "javascript": ("javascript", "node", "npm", "pnpm", ".js", ".jsx"),
+        "typescript": ("typescript", "tsconfig", ".ts", ".tsx"),
+        "svelte": ("svelte", "sveltekit", ".svelte"),
+    }
+    haystack = f"{text}\n{touched_files.lower()}"
+    for language, needles in markers.items():
+        if any(needle in haystack for needle in needles):
+            languages.add(language)
+    return languages
+
+
+def _detect_frameworks(text: str, touched_files: str) -> set[str]:
+    frameworks: set[str] = set()
+    haystack = f"{text}\n{touched_files.lower()}"
+    markers = {
+        "pytest": ("pytest",),
+        "fastapi": ("fastapi",),
+        "pydantic": ("pydantic",),
+        "sveltekit": ("sveltekit", ".svelte", "src/routes"),
+        "react": ("react", ".jsx", ".tsx"),
+        "nextjs": ("next.js", "nextjs"),
+    }
+    for framework, needles in markers.items():
+        if any(needle in haystack for needle in needles):
+            frameworks.add(framework)
+    return frameworks
+
+
+def _detect_tools(text: str, touched_files: str) -> set[str]:
+    tools: set[str] = set()
+    haystack = f"{text}\n{touched_files.lower()}"
+    markers = {
+        "git": ("git", ".git", "commit", "worktree"),
+        "pytest": ("pytest",),
+        "cargo": ("cargo", "clippy"),
+        "npm": ("npm", "package.json"),
+        "pnpm": ("pnpm", "pnpm-lock.yaml"),
+        "node": ("node", "package.json", ".js", ".ts", ".svelte"),
+    }
+    for tool, needles in markers.items():
+        if any(needle in haystack for needle in needles):
+            tools.add(tool)
+    return tools
+
+
+def _detect_operating_systems(text: str) -> set[str]:
+    systems: set[str] = set()
+    markers = {
+        "darwin": ("macos", "mac os", "darwin", "mlx"),
+        "linux": ("linux", "ubuntu", "debian"),
+        "windows": ("windows", "powershell", "win32"),
+    }
+    for system, needles in markers.items():
+        if any(re.search(rf"\b{re.escape(needle)}\b", text) for needle in needles):
+            systems.add(system)
+    return systems
+
+
+def _select_universal_summaries(summaries: list[ActionSummary]) -> list[ActionSummary]:
+    selected: list[ActionSummary] = []
+    total_tokens = 0
+    for summary in summaries:
+        if len(selected) >= _UNIVERSAL_MAX_ITEMS:
+            break
+        tokens = estimate_tokens(render_summary(summary))
+        metadata = summary.universal_metadata
+        per_seed_cap = metadata.token_budget_cap if metadata is not None else 100
+        if tokens > per_seed_cap:
+            continue
+        if total_tokens + tokens > _UNIVERSAL_MAX_TOKENS:
+            continue
+        selected.append(summary)
+        total_tokens += tokens
+    return selected
 
 
 def _context_repo_id(request: ContextPackRequest) -> str | None:

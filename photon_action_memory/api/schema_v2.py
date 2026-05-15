@@ -18,7 +18,7 @@ from photon_action_memory.api.schema import (
     WorkingMemory,
 )
 
-SchemaVersionV2 = Literal["action-memory.v0.2"]
+SchemaVersionV2 = Literal["action-memory.v0.2", "action-memory.v0.3"]
 DEFAULT_SCHEMA_VERSION_V2: SchemaVersionV2 = "action-memory.v0.2"
 
 ChunkKind = Literal[
@@ -39,6 +39,8 @@ StalenessStatusKind = Literal["valid", "stale", "partial", "contradicted", "unkn
 ValidityStatusKind = Literal["valid", "stale", "partial", "contradicted"]
 ContextPackMode = Literal["summary_only", "summary_plus_evidence", "none"]
 HypothesisStatus = Literal["open", "confirmed", "rejected"]
+ApplicabilityScope = Literal["repo", "task_signature", "universal"]
+UniversalSeverity = Literal["info", "warning", "critical"]
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +199,26 @@ class Validity(SidecarModel):
     reason: str | None = None
 
 
+class UniversalMetadata(SidecarModel):
+    """Applicability metadata for universal ActionSummary seeds."""
+
+    language: list[str] | None = None
+    framework: list[str] | None = None
+    tool: list[str] | None = None
+    os: list[str] | None = None
+    severity: UniversalSeverity | str = "info"
+    token_budget_cap: int = Field(default=100, ge=0)
+
+
+class UniversalFilters(SidecarModel):
+    """Detected context filters used to retrieve universal seeds."""
+
+    language: list[str] = Field(default_factory=list)
+    framework: list[str] = Field(default_factory=list)
+    tool: list[str] = Field(default_factory=list)
+    os: list[str] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # ActionSummary
 # ---------------------------------------------------------------------------
@@ -222,6 +244,8 @@ class ActionSummary(SidecarModel):
     next_hints: list[NextHint] = Field(default_factory=list)
     token_cost: TokenCost | None = None
     validity: Validity = Field(default_factory=Validity)
+    applicability_scope: ApplicabilityScope | str = "repo"
+    universal_metadata: UniversalMetadata | None = None
 
 
 # ---------------------------------------------------------------------------

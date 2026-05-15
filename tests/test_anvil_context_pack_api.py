@@ -82,7 +82,7 @@ def test_anvil_summary_appears_in_context_pack_items(tmp_path: Path) -> None:
     summary = ActionSummary.model_validate(raw_summary)
     summary_store.upsert(summary)
 
-    body = {
+    body: dict[str, object] = {
         "schema_version": DEFAULT_SCHEMA_VERSION_V2,
         "request_id": "pack-anvil-sum-001",
         "agent": {"name": "anvil", "version": "1.0.0"},
@@ -107,7 +107,7 @@ def test_anvil_summary_appears_in_context_pack_items(tmp_path: Path) -> None:
 
 def test_anvil_unknown_candidate_summary_id_is_skipped(tmp_path: Path) -> None:
     app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"))
-    body = {
+    body: dict[str, object] = {
         "schema_version": DEFAULT_SCHEMA_VERSION_V2,
         "request_id": "pack-anvil-unknown-001",
         "agent": {"name": "anvil", "version": "1.0.0"},
@@ -141,7 +141,7 @@ def test_anvil_stale_summary_not_in_context_pack(tmp_path: Path) -> None:
     summary = summary.model_copy(update={"validity": Validity(status="stale", reason="outdated")})
     summary_store.upsert(summary)
 
-    body = {
+    body: dict[str, object] = {
         "schema_version": DEFAULT_SCHEMA_VERSION_V2,
         "request_id": "pack-anvil-stale-001",
         "agent": {"name": "anvil", "version": "1.0.0"},

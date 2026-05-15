@@ -1,0 +1,21 @@
+{
+  "schema_version": "action-memory.v0.3",
+  "summary_id": "universal-git-worktree",
+  "session_id": "universal-seed",
+  "repo_id": "__common__",
+  "summary_level": "case",
+  "applicability_scope": "universal",
+  "universal_metadata": {
+    "tool": ["git"],
+    "severity": "info",
+    "token_budget_cap": 70
+  },
+  "facts": [
+    {
+      "text": "git worktree allows separate checkouts of different branches while sharing one repository object database.",
+      "evidence_ids": ["universal-git-worktree-ev-001"],
+      "confidence": 0.9
+    }
+  ],
+  "validity": { "status": "valid" }
+}

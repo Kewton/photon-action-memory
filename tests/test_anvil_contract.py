@@ -282,7 +282,7 @@ def test_anvil_summary_upsert_and_resolve_via_context_pack(tmp_path: Path) -> No
     summary_store.upsert(summary)
 
     with TestClient(create_app(event_store, summary_store)) as client:
-        body = {
+        body: dict[str, object] = {
             "schema_version": DEFAULT_SCHEMA_VERSION_V2,
             "request_id": "pack-resolve-001",
             "agent": {"name": "anvil", "version": "1.0.0"},
