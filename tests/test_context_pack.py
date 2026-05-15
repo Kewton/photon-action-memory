@@ -38,6 +38,7 @@ from photon_action_memory.context.quality_gate import (
     premature_overlap_threshold,
 )
 from photon_action_memory.context.render import estimate_tokens, render_summary
+from photon_action_memory.memory.retrieval import COMMON_REPO_ID, merge_dedup_summaries
 from photon_action_memory.memory.sanitizer import REDACTED_SECRET
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.memory.summary_store import SummaryStore
@@ -826,6 +827,108 @@ def test_context_pack_api_auto_search_prefers_task_signature(tmp_path: Path) -> 
     items = response.json()["context_pack"]["items"]
     assert [item["id"] for item in items] == ["sum-task"]
     assert "task-specific memory" in items[0]["text"]
+
+
+def test_common_seed_fallback_merges_after_repo_specific_task_seed(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-task-specific",
+            repo_id="photon-test",
+            task_signature="python-pytest-pattern",
+            facts=[_fact("repo-specific pytest convention")],
+        )
+    )
+    ss.upsert(
+        _make_summary(
+            "sum-common-pytest",
+            repo_id=COMMON_REPO_ID,
+            task_signature="python-pytest-pattern",
+            facts=[_fact("common pytest verbose flag is -v")],
+        )
+    )
+    body = _pack_request()
+    body["task"]["task_signature"] = "python-pytest-pattern"
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=body)
+
+    assert response.status_code == 200
+    items = response.json()["context_pack"]["items"]
+    assert [item["id"] for item in items] == ["sum-task-specific", "sum-common-pytest"]
+    assert "repo-specific pytest convention" in items[0]["text"]
+    assert "common pytest verbose flag is -v" in items[1]["text"]
+
+
+def test_common_seed_fallback_works_when_repo_has_no_match(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-common-rust",
+            repo_id=COMMON_REPO_ID,
+            task_signature="rust-error-handling",
+            facts=[_fact("Rust ? operator requires Result or Option return types")],
+        )
+    )
+    body = _pack_request()
+    body["repo"]["name"] = "unseeded-repo"
+    body["task"]["task_signature"] = "rust-error-handling"
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=body)
+
+    assert response.status_code == 200
+    items = response.json()["context_pack"]["items"]
+    assert [item["id"] for item in items] == ["sum-common-rust"]
+    assert "Rust ? operator" in items[0]["text"]
+
+
+def test_common_seed_loses_token_budget_competition_to_specific_seed(tmp_path: Path) -> None:
+    ss = SummaryStore(tmp_path / "summaries.sqlite")
+    ss.upsert(
+        _make_summary(
+            "sum-specific-small",
+            repo_id="photon-test",
+            task_signature="sveltekit-route-edit",
+            facts=[_fact("specific SvelteKit route fact")],
+        )
+    )
+    ss.upsert(
+        _make_summary(
+            "sum-common-large",
+            repo_id=COMMON_REPO_ID,
+            task_signature="sveltekit-route-edit",
+            facts=[_fact("common SvelteKit context " * 40)],
+        )
+    )
+    body = _pack_request(max_tokens=20)
+    body["task"]["task_signature"] = "sveltekit-route-edit"
+    app = create_app(SQLiteEventStore(tmp_path / "events.sqlite"), summary_store=ss)
+    with TestClient(app) as client:
+        response = client.post("/v1/context/pack", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()["context_pack"]
+    assert [item["id"] for item in payload["items"]] == ["sum-specific-small"]
+    assert [item["id"] for item in payload["omitted"]] == ["sum-common-large"]
+    assert payload["omitted"][0]["reason"] == "token budget exceeded"
+
+
+def test_common_seed_merge_prefers_existing_specific_summary_id() -> None:
+    specific = _make_summary(
+        "sum-duplicate",
+        repo_id="photon-test",
+        facts=[_fact("specific wins")],
+    )
+    common = _make_summary(
+        "sum-duplicate",
+        repo_id=COMMON_REPO_ID,
+        facts=[_fact("common duplicate loses")],
+    )
+
+    merged = merge_dedup_summaries([specific], [common])
+
+    assert merged == [specific]
 
 
 def test_context_pack_api_auto_resolves_repo_from_root_basename(tmp_path: Path) -> None:

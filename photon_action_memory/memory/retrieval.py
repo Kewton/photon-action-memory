@@ -6,6 +6,7 @@ from photon_action_memory.api.schema_v2 import ActionSummary
 from photon_action_memory.memory.staleness import StalenessContext, StalenessGuard
 from photon_action_memory.memory.summary_store import SummaryStore
 
+COMMON_REPO_ID = "__common__"
 _STALE_STATUSES: frozenset[str] = frozenset({"stale", "contradicted"})
 
 
@@ -49,6 +50,21 @@ class SummaryRetriever:
         )
         return self._filter_stale(summaries, staleness_context)
 
+    def search_common(
+        self,
+        *,
+        task_signature: str,
+        staleness_context: StalenessContext | None = None,
+        limit: int = 50,
+    ) -> list[ActionSummary]:
+        """Search common seeds for a task signature."""
+        return self.search(
+            repo_id=COMMON_REPO_ID,
+            task_signature=task_signature,
+            staleness_context=staleness_context,
+            limit=limit,
+        )
+
     def _filter_stale(
         self,
         summaries: list[ActionSummary],
@@ -64,4 +80,19 @@ class SummaryRetriever:
         return result
 
 
-__all__ = ["SummaryRetriever"]
+def merge_dedup_summaries(
+    primary: list[ActionSummary],
+    secondary: list[ActionSummary],
+) -> list[ActionSummary]:
+    """Merge summaries by summary_id while preserving primary precedence."""
+    merged = list(primary)
+    seen = {summary.summary_id for summary in merged}
+    for summary in secondary:
+        if summary.summary_id in seen:
+            continue
+        merged.append(summary)
+        seen.add(summary.summary_id)
+    return merged
+
+
+__all__ = ["COMMON_REPO_ID", "SummaryRetriever", "merge_dedup_summaries"]

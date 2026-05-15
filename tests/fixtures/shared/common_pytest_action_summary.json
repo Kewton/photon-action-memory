@@ -1,0 +1,38 @@
+{
+  "schema_version": "action-memory.v0.2",
+  "summary_id": "photon-common-pytest-verbose",
+  "session_id": "common-seed",
+  "repo_id": "__common__",
+  "task_signature": "python-pytest-pattern",
+  "summary_level": "case",
+  "facts": [
+    {
+      "text": "pytest -v enables verbose test output, and -x stops at the first failure.",
+      "evidence_ids": ["common-pytest-ev-001"],
+      "confidence": 0.95
+    }
+  ],
+  "avoid": [
+    {
+      "action": "rerun an entire large pytest suite when a single test path is known",
+      "reason": "Targeting the failing test path is faster and produces clearer output.",
+      "evidence_ids": ["common-pytest-ev-001"]
+    }
+  ],
+  "next_hints": [
+    {
+      "kind": "verify",
+      "target": "pytest -v -x path/to/test_file.py::test_name",
+      "reason": "Use a focused verbose run to reproduce one failing pytest case.",
+      "confidence": 0.9
+    }
+  ],
+  "token_cost": {
+    "estimated_summary_tokens": 44,
+    "estimated_raw_tokens": 320,
+    "tokens_saved_vs_raw": 276
+  },
+  "validity": {
+    "status": "valid"
+  }
+}
