@@ -43,6 +43,7 @@ from photon_action_memory.models.context_scorer import (
 )
 from photon_action_memory.ranking.feedback import (
     CONTRADICTED_MAX_SCORE,
+    MAX_USER_SIGNAL_BOOST,
     STALE_MAX_SCORE,
     FeedbackAdjustedContextScorer,
     apply_feedback_boost,
@@ -161,6 +162,70 @@ def test_aggregate_mixed_computes_correct_quality_score() -> None:
 def test_aggregate_partial_counts_as_adoption() -> None:
     fb = aggregate_anvil_feedback([_record("partial", "success")])
     assert fb.adoption_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Anvil PR #599 explicit user feedback outcomes (Issue #116)
+# ---------------------------------------------------------------------------
+
+
+def test_user_positive_counted_as_success() -> None:
+    fb = aggregate_anvil_feedback([_record("adopted", "user_positive")])
+    assert fb.success_count == 1
+    assert fb.user_positive_count == 1
+    assert fb.correction_count == 0
+    assert fb.quality_score == pytest.approx(1.0)
+    assert fb.user_signal_score == pytest.approx(1.0)
+
+
+def test_user_rule_counted_as_success() -> None:
+    fb = aggregate_anvil_feedback([_record("adopted", "user_rule")])
+    assert fb.success_count == 1
+    assert fb.user_positive_count == 1
+    assert fb.correction_count == 0
+    assert fb.quality_score == pytest.approx(1.0)
+    assert fb.user_signal_score == pytest.approx(1.0)
+
+
+def test_user_correction_counted_as_correction_not_success() -> None:
+    fb = aggregate_anvil_feedback([_record("adopted", "user_correction")])
+    # quality turn, but neither a success nor an implicit failure-only signal
+    assert fb.quality_turns == 1
+    assert fb.success_count == 0
+    assert fb.correction_count == 1
+    assert fb.user_positive_count == 0
+    assert fb.quality_score == pytest.approx(0.0)
+    assert fb.user_signal_score == pytest.approx(0.0)
+
+
+def test_user_negative_not_counted_as_success() -> None:
+    # Explicit user thumbs-down — quality turn, but a non-success outcome
+    fb = aggregate_anvil_feedback([_record("adopted", "user_negative")])
+    assert fb.quality_turns == 1
+    assert fb.success_count == 0
+    assert fb.correction_count == 0
+    assert fb.user_positive_count == 0
+    assert fb.quality_score == pytest.approx(0.0)
+    assert fb.user_signal_score == pytest.approx(0.0)
+
+
+def test_user_signal_score_boosts_scoring_above_implicit_success() -> None:
+    """Two packs with equal quality_score but different user_signal_score
+    must rank the explicit-user-positive pack higher."""
+    fb_implicit = aggregate_anvil_feedback([_record("adopted", "success")])
+    fb_user = aggregate_anvil_feedback([_record("adopted", "user_positive")])
+    # Sanity: both have full quality_score, but user_signal diverges
+    assert fb_implicit.quality_score == pytest.approx(1.0)
+    assert fb_user.quality_score == pytest.approx(1.0)
+    assert fb_implicit.user_signal_score == pytest.approx(0.0)
+    assert fb_user.user_signal_score == pytest.approx(1.0)
+
+    s = _summary(facts=[_fact()])
+    implicit_score = FeedbackAdjustedContextScorer(fb_implicit).score_admission([s])[0].score
+    user_score = FeedbackAdjustedContextScorer(fb_user).score_admission([s])[0].score
+    assert user_score > implicit_score
+    # The lift should be bounded by MAX_USER_SIGNAL_BOOST
+    assert user_score - implicit_score <= MAX_USER_SIGNAL_BOOST + 1e-9
 
 
 # ---------------------------------------------------------------------------

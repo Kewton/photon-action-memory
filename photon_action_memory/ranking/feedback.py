@@ -37,6 +37,13 @@ CONTRADICTED_MAX_SCORE: float = 0.15
 # Keeps the boost bounded so structural signals dominate.
 MAX_QUALITY_BOOST: float = 0.2
 
+# Additional boost from explicit user-positive signal (Anvil PR #599
+# ``user_positive`` / ``user_rule`` outcomes). Layered on top of
+# MAX_QUALITY_BOOST so an explicit thumbs-up pushes a valid item higher
+# than an equivalent implicit success. Combined max boost remains bounded
+# (0.30) and the per-status hard caps still apply.
+MAX_USER_SIGNAL_BOOST: float = 0.1
+
 _BLOCKED_STATUSES: frozenset[str] = frozenset({"stale", "contradicted", "unsafe"})
 
 
@@ -59,14 +66,22 @@ def apply_feedback_boost(
     quality_score: float,
     *,
     max_boost: float = MAX_QUALITY_BOOST,
+    user_signal: float = 0.0,
+    max_user_boost: float = MAX_USER_SIGNAL_BOOST,
 ) -> float:
     """Apply a bounded feedback quality boost to a base score.
 
-    quality_score * max_boost is added to base_score, then clamped to [0,1].
-    The result is then hard-capped by _score_cap(status) to prevent stale or
-    contradicted items from recovering to valid-item score ranges.
+    ``quality_score * max_boost`` plus ``user_signal * max_user_boost`` is
+    added to ``base_score``, then clamped to ``[0, 1]``. The result is
+    finally hard-capped by ``_score_cap(status)`` so stale, contradicted,
+    or unsafe items can never recover into valid-item score ranges.
+
+    ``user_signal`` is the explicit-user-positive ratio from
+    ``PackFeedback.user_signal_score`` (Anvil PR #599). It stacks on top
+    of the implicit-success boost so an explicit thumbs-up outranks an
+    equivalent implicit success.
     """
-    boosted = _clamp(base_score + quality_score * max_boost)
+    boosted = _clamp(base_score + quality_score * max_boost + user_signal * max_user_boost)
     return _clamp(min(boosted, _score_cap(status)))
 
 
@@ -110,8 +125,12 @@ class FeedbackAdjustedContextScorer:
                 base.score,
                 summary.validity.status,
                 self._feedback.quality_score,
+                user_signal=self._feedback.user_signal_score,
             )
-            reason = f"{base.reason} feedback_boost={self._feedback.quality_score:.2f}"
+            reason = (
+                f"{base.reason} feedback_boost={self._feedback.quality_score:.2f}"
+                f" user_signal={self._feedback.user_signal_score:.2f}"
+            )
             result = AdmissionScore(
                 summary_id=summary.summary_id,
                 score=new_score,
@@ -141,8 +160,12 @@ class FeedbackAdjustedContextScorer:
                 base.score,
                 ref.staleness.status,
                 quality,
+                user_signal=self._feedback.user_signal_score,
             )
-            reason = f"{base.reason} feedback_boost={quality:.2f}"
+            reason = (
+                f"{base.reason} feedback_boost={quality:.2f}"
+                f" user_signal={self._feedback.user_signal_score:.2f}"
+            )
             result = EvidenceExpansionScore(
                 evidence_id=ref.evidence_id,
                 score=new_score,
@@ -166,8 +189,12 @@ class FeedbackAdjustedContextScorer:
                 base.score,
                 summary.validity.status,
                 self._feedback.quality_score,
+                user_signal=self._feedback.user_signal_score,
             )
-            reason = f"{base.reason} feedback_boost={self._feedback.quality_score:.2f}"
+            reason = (
+                f"{base.reason} feedback_boost={self._feedback.quality_score:.2f}"
+                f" user_signal={self._feedback.user_signal_score:.2f}"
+            )
             result = SummaryUsefulnessScore(
                 summary_id=summary.summary_id,
                 score=new_score,
@@ -191,6 +218,7 @@ class FeedbackAdjustedContextScorer:
 __all__ = [
     "CONTRADICTED_MAX_SCORE",
     "MAX_QUALITY_BOOST",
+    "MAX_USER_SIGNAL_BOOST",
     "STALE_MAX_SCORE",
     "FeedbackAdjustedContextScorer",
     "apply_feedback_boost",
