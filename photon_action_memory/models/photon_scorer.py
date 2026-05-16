@@ -24,6 +24,7 @@ from typing import Protocol
 from photon_action_memory.models.checkpoint import CheckpointError
 from photon_action_memory.models.photon_adapter import (
     CHECKPOINT_ENV,
+    CHECKPOINT_STRICT_ENV,
     PHOTON_MODEL_VERSION,
     PhotonAdapterError,
     PhotonMLXAdapter,
@@ -398,10 +399,18 @@ def make_action_memory_scorer(
     if not raw:
         return DeterministicActionMemoryScorer()
     try:
-        adapter = PhotonMLXAdapter.from_checkpoint(Path(raw))
-    except (CheckpointError, PhotonAdapterError):
+        adapter = PhotonMLXAdapter.from_checkpoint(
+            Path(raw),
+            strict=_strict_checkpoint_mode(environment),
+        )
+    except (OSError, ValueError, CheckpointError, PhotonAdapterError):
         return DeterministicActionMemoryScorer(warnings=("photon_unavailable",))
     return PhotonMLXActionMemoryScorer(adapter=adapter)
+
+
+def _strict_checkpoint_mode(environment: Mapping[str, str]) -> bool:
+    raw_value = environment.get(CHECKPOINT_STRICT_ENV, "").strip().lower()
+    return raw_value in {"1", "true", "yes", "on", "strict"}
 
 
 __all__ = [

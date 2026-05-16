@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from photon_action_memory.models.photon_adapter import CHECKPOINT_STRICT_ENV
 from photon_action_memory.models.photon_scorer import (
     DETERMINISTIC_MODEL_VERSION,
     ActionMemoryScoreResult,
@@ -11,9 +14,26 @@ from photon_action_memory.models.photon_scorer import (
     EvidenceCandidate,
     FailedAttemptCandidate,
     NextHintCandidate,
+    PhotonMLXActionMemoryScorer,
     SummaryCandidate,
     make_action_memory_scorer,
 )
+
+FIXTURE_CHECKPOINT = (
+    Path(__file__).parent / "fixtures" / "photon" / "checkpoints" / "action_memory_tiny"
+)
+
+
+class _FakeArray(list[float]):
+    def item(self) -> float:
+        return self[0]
+
+
+class _FakeMlx:
+    float32 = "float32"
+
+    def array(self, values: list[float], *, dtype: object | None = None) -> _FakeArray:
+        return _FakeArray(values)
 
 
 def _score(
@@ -124,3 +144,69 @@ class TestFactory:
             env={"PHOTON_ACTION_MEMORY_CHECKPOINT": "/path/that/does/not/exist"},
         )
         assert isinstance(scorer, DeterministicActionMemoryScorer)
+
+    def test_valid_fixture_checkpoint_enters_photon_scorer_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "photon_action_memory.models.photon_adapter.importlib.import_module",
+            lambda _name: _FakeMlx(),
+        )
+
+        scorer = make_action_memory_scorer(
+            env={"PHOTON_ACTION_MEMORY_CHECKPOINT": str(FIXTURE_CHECKPOINT)},
+        )
+
+        assert isinstance(scorer, PhotonMLXActionMemoryScorer)
+        result = scorer.score(
+            request_id="req",
+            repo_id="repo",
+            task_text="SessionStore retrieval bug",
+            candidate_summaries=[
+                SummaryCandidate(
+                    summary_id="related",
+                    text="SessionStore retrieval bug fix summary",
+                    evidence_ids=("evt_session_failure",),
+                ),
+                SummaryCandidate(summary_id="noise", text="unrelated docs update"),
+            ],
+            candidate_evidence=[
+                EvidenceCandidate(
+                    evidence_id="evt_session_failure",
+                    text="SessionStore failure traceback",
+                )
+            ],
+        )
+        assert result.model_version == "action-memory-photon-tiny-v1"
+        assert result.summary_scores[0].score > result.summary_scores[1].score
+        assert result.evidence_scores[0].score == pytest.approx(0.5)
+
+    def test_strict_integrity_failure_falls_back_with_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        checkpoint = tmp_path / "checkpoint"
+        _copy_fixture_checkpoint(FIXTURE_CHECKPOINT, checkpoint)
+        (checkpoint / "state.json").write_text('{"step": 99}\n', encoding="utf-8")
+        monkeypatch.setattr(
+            "photon_action_memory.models.photon_adapter.importlib.import_module",
+            lambda _name: _FakeMlx(),
+        )
+
+        scorer = make_action_memory_scorer(
+            env={
+                "PHOTON_ACTION_MEMORY_CHECKPOINT": str(checkpoint),
+                CHECKPOINT_STRICT_ENV: "true",
+            },
+        )
+
+        assert isinstance(scorer, DeterministicActionMemoryScorer)
+        assert scorer.warnings == ("photon_unavailable",)
+
+
+def _copy_fixture_checkpoint(source: Path, target: Path) -> None:
+    target.mkdir()
+    for item in source.iterdir():
+        (target / item.name).write_bytes(item.read_bytes())

@@ -52,6 +52,80 @@ Expected startup state:
 - The sidecar is fail-open for integration routes; callers should keep their own
   turn execution path independent of this process.
 
+### Optional PHOTON Checkpoint Scorer
+
+The default scorer is deterministic and requires no PHOTON checkpoint. To test
+the PHOTON/MLX scorer path, point the sidecar at a local runtime checkpoint:
+
+```bash
+PHOTON_ACTION_MEMORY_CHECKPOINT=/path/to/checkpoint \
+python -m uvicorn photon_action_memory.api.server:app \
+  --host 127.0.0.1 \
+  --port 18765
+```
+
+For strict local verification of `state.json` and `weights.npz` hashes:
+
+```bash
+PHOTON_ACTION_MEMORY_CHECKPOINT=/path/to/checkpoint \
+PHOTON_ACTION_MEMORY_CHECKPOINT_STRICT=true \
+python -m uvicorn photon_action_memory.api.server:app \
+  --host 127.0.0.1 \
+  --port 18765
+```
+
+Runtime checkpoint directories use this shape:
+
+```text
+checkpoint/
+  manifest.json
+  state.json
+  weights.npz
+  integrity.json
+```
+
+`manifest.json` carries the small Action Memory scoring state:
+
+```json
+{
+  "format": "photon-action-memory.mlx.v1",
+  "model_version": "action-memory-photon-...",
+  "state": {
+    "bias": 0.5,
+    "action_weights": {},
+    "file_weights": {},
+    "evidence_weights": {}
+  }
+}
+```
+
+Large checkpoints and model weights must stay outside git. The committed
+checkpoint under `tests/fixtures/photon/checkpoints/action_memory_tiny/` is a
+tiny CI fixture only; it is not a production model.
+
+Fallback matrix:
+
+| State | Expected behavior |
+|---|---|
+| checkpoint unset | deterministic scorer |
+| checkpoint valid + MLX available | PHOTON scorer |
+| checkpoint missing | deterministic fallback + `photon_unavailable` warning |
+| checkpoint invalid | deterministic fallback + `photon_unavailable` warning |
+| MLX unavailable | deterministic fallback + `photon_unavailable` warning |
+| strict integrity mismatch | deterministic fallback + `photon_unavailable` warning |
+
+To build a small local checkpoint from normalized eval/feedback records:
+
+```bash
+python scripts/build_action_memory_checkpoint.py records.json \
+  --output /tmp/photon-action-memory/checkpoints/local-v1 \
+  --model-version action-memory-local-v1
+```
+
+The records file may be a JSON list or an object with a `records` list. Each
+record can include `kind`, `key`/`target`/`evidence_id`/`action`, and either an
+explicit `weight` or an `adopted` boolean.
+
 ## API Smoke Checks
 
 Run these from the repository root while the sidecar is running.
@@ -249,4 +323,3 @@ mypy photon_action_memory tests
 pytest -q
 python -m build
 ```
-
