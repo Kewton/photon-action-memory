@@ -77,9 +77,15 @@ from photon_action_memory.memory.retrieval import (
 from photon_action_memory.memory.sanitizer import sanitize_text_with_report
 from photon_action_memory.memory.store import SQLiteEventStore
 from photon_action_memory.memory.summaries import (
-    ActionSummaryBuilder,
     SummaryCanonicalizer,
     SummaryStateUpdater,
+)
+from photon_action_memory.memory.summary_generator import (
+    SummaryGenerationAborted,
+    SummaryGeneratorFallbackReason,
+    SummaryGeneratorProtocol,
+    SummaryGeneratorReport,
+    make_summary_generator,
 )
 from photon_action_memory.memory.summary_store import SummaryStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
@@ -190,12 +196,15 @@ def default_summary_store_path() -> Path:
 def create_app(
     store: SQLiteEventStore | None = None,
     summary_store: SummaryStore | None = None,
+    summary_generator: SummaryGeneratorProtocol | None = None,
 ) -> FastAPI:
     event_store = store or SQLiteEventStore(default_store_path())
     _summary_store = summary_store or SummaryStore(default_summary_store_path())
+    _summary_generator: SummaryGeneratorProtocol = summary_generator or make_summary_generator()
     app = FastAPI(title="PHOTON Action Memory", version=__version__)
     app.state.event_store = event_store
     app.state.summary_store = _summary_store
+    app.state.summary_generator = _summary_generator
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -347,8 +356,14 @@ def create_app(
         if request.draft_summary is not None:
             return _summarize_with_firewall(request, event_store=event_store)
         if "chunks" in request.model_fields_set:
-            return _summarize_inline_chunks(request, event_store, _summary_store)
+            return _summarize_inline_chunks(
+                request,
+                event_store,
+                _summary_store,
+                _summary_generator,
+            )
 
+        reports: list[SummaryGeneratorReport] = []
         try:
             repo_id = request.repo_id
             if repo_id is None and request.repo is not None:
@@ -362,26 +377,53 @@ def create_app(
                 repo_id=repo_id,
             )
             chunks = ActionChunker().chunk(stored_events)
-            builder = ActionSummaryBuilder()
+            evidence_records = [ev.payload for ev in stored_events]
             canonicalizer = SummaryCanonicalizer()
             summaries: list[ActionSummary] = []
             summary_ids: list[str] = []
             for chunk in chunks:
-                summary = builder.build(chunk)
+                summary, report = _summary_generator.build(
+                    chunk,
+                    evidence_records=evidence_records,
+                )
+                reports.append(report)
                 if task_signature is not None:
                     summary = summary.model_copy(update={"task_signature": task_signature})
                 summary = canonicalizer.canonicalize(summary).summary
                 _summary_store.upsert(summary)
                 summaries.append(summary)
                 summary_ids.append(summary.summary_id)
+        except SummaryGenerationAborted as exc:
+            return SummarizeResponse(
+                schema_version=DEFAULT_SCHEMA_VERSION_V2,
+                request_id=request.request_id,
+                model_version=FALLBACK_MODEL_VERSION,
+                sidecar_status="degraded",
+                status="aborted",
+                chunks_built=0,
+                summaries_upserted=0,
+                summary_ids=[],
+                summary=None,
+                validation=None,
+                tokens_saved_vs_raw=0,
+                warnings=[
+                    ContextPackWarning(
+                        kind="summary_generation_aborted",
+                        message=str(exc),
+                    )
+                ],
+                generator_used="rule_based",
+                generator_fallback_reason=str(exc),
+            )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+        generator_used, fallback_reason, status = _aggregate_generator_reports(reports)
         return SummarizeResponse(
             schema_version=DEFAULT_SCHEMA_VERSION_V2,
             request_id=request.request_id,
             model_version=FALLBACK_MODEL_VERSION,
-            sidecar_status="ok",
-            status="ok",
+            sidecar_status="ok" if status == "ok" else "degraded",
+            status=status,
             chunks_built=len(chunks),
             summaries_upserted=len(summary_ids),
             summary_ids=summary_ids,
@@ -389,6 +431,8 @@ def create_app(
             validation=None,
             tokens_saved_vs_raw=sum(_tokens_saved(summary.token_cost) for summary in summaries),
             warnings=[],
+            generator_used=generator_used,
+            generator_fallback_reason=fallback_reason,
         )
 
     @app.post("/v1/evaluate", response_model=EvaluateResponse)
@@ -497,10 +541,33 @@ def _summarize_inline_chunks(
     request: SummarizeRequest,
     event_store: SQLiteEventStore,
     summary_store: SummaryStore,
+    generator: SummaryGeneratorProtocol,
 ) -> SummarizeResponse:
     warnings: list[ContextPackWarning] = []
+    evidence_records = [ev.payload for ev in event_store.list_events()]
     try:
-        summary = _build_hierarchical_summary(request)
+        summary, reports = _build_hierarchical_summary(
+            request,
+            generator=generator,
+            evidence_records=evidence_records,
+        )
+    except SummaryGenerationAborted as exc:
+        return SummarizeResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            model_version=FALLBACK_MODEL_VERSION,
+            sidecar_status="degraded",
+            status="aborted",
+            chunks_built=0,
+            summaries_upserted=0,
+            summary_ids=[],
+            summary=None,
+            validation=None,
+            tokens_saved_vs_raw=0,
+            warnings=[ContextPackWarning(kind="summary_generation_aborted", message=str(exc))],
+            generator_used="rule_based",
+            generator_fallback_reason=str(exc),
+        )
     except ValueError as exc:
         return SummarizeResponse(
             schema_version=DEFAULT_SCHEMA_VERSION_V2,
@@ -518,7 +585,6 @@ def _summarize_inline_chunks(
         )
 
     try:
-        evidence_records = [ev.payload for ev in event_store.list_events()]
         checker = SummaryFidelityChecker(records=evidence_records)
         validation = checker.check(summary)
     except Exception as exc:
@@ -536,12 +602,14 @@ def _summarize_inline_chunks(
         logger.warning("summarize persist error: %s", exc)
         warnings.append(ContextPackWarning(kind="summarize_persist_error", message=str(exc)))
 
+    generator_used, fallback_reason, generator_status = _aggregate_generator_reports(reports)
+    status = "degraded" if warnings else generator_status
     return SummarizeResponse(
         schema_version=DEFAULT_SCHEMA_VERSION_V2,
         request_id=request.request_id,
         model_version=FALLBACK_MODEL_VERSION,
-        sidecar_status="degraded" if warnings else "ok",
-        status="degraded" if warnings else "ok",
+        sidecar_status="degraded" if warnings or status != "ok" else "ok",
+        status=status,
         chunks_built=len(request.chunks),
         summaries_upserted=summaries_upserted,
         summary_ids=summary_ids,
@@ -549,7 +617,43 @@ def _summarize_inline_chunks(
         validation=validation,
         tokens_saved_vs_raw=_tokens_saved(summary.token_cost),
         warnings=warnings,
+        generator_used=generator_used,
+        generator_fallback_reason=fallback_reason,
     )
+
+
+_GENERATOR_FALLBACK_DEGRADE: frozenset[str] = frozenset(
+    {"quality_gate_rejected", "fidelity_invalid"}
+)
+
+
+def _aggregate_generator_reports(
+    reports: list[SummaryGeneratorReport],
+) -> tuple[str, SummaryGeneratorFallbackReason | None, str]:
+    """Collapse per-chunk reports into one (generator_used, fallback_reason, status).
+
+    - generator_used == "llm" only if every chunk used LLM with no fallback.
+    - fallback_reason is the first non-None reason encountered.
+    - status is ``"ok"`` on a clean LLM path or rule-based default;
+      ``"fallback_rule_based"`` for any infrastructure-level fallback;
+      ``"degraded"`` for gate-driven fallbacks where the LLM output was
+      rejected on quality / fidelity grounds.
+    """
+    if not reports:
+        return "rule_based", None, "ok"
+
+    fallback_reason: SummaryGeneratorFallbackReason | None = None
+    for report in reports:
+        if report.fallback_reason is not None and fallback_reason is None:
+            fallback_reason = report.fallback_reason
+
+    if fallback_reason is None and all(r.generator_used == "llm" for r in reports):
+        return "llm", None, "ok"
+    if fallback_reason is None:
+        return "rule_based", None, "ok"
+    if fallback_reason in _GENERATOR_FALLBACK_DEGRADE:
+        return "rule_based", fallback_reason, "degraded"
+    return "rule_based", fallback_reason, "fallback_rule_based"
 
 
 def _tokens_saved(token_cost: TokenCost | None) -> int:
@@ -558,18 +662,37 @@ def _tokens_saved(token_cost: TokenCost | None) -> int:
     return max(0, token_cost.tokens_saved_vs_raw)
 
 
-def _build_hierarchical_summary(request: SummarizeRequest) -> ActionSummary:
-    """Fold request chunks into a single ActionSummary at the requested level."""
+def _build_hierarchical_summary(
+    request: SummarizeRequest,
+    *,
+    generator: SummaryGeneratorProtocol,
+    evidence_records: list[dict[str, Any]],
+) -> tuple[ActionSummary, list[SummaryGeneratorReport]]:
+    """Fold request chunks into a single ActionSummary at the requested level.
+
+    The first chunk is summarized via the configured generator (so the LLM
+    path is honored when enabled). Subsequent chunks are merged with the
+    deterministic :class:`SummaryStateUpdater` to preserve evidence-grounded
+    incremental semantics — LLM rewriting the merge step would risk dropping
+    previously recorded failures or facts.
+    """
     chunks: list[ActionChunk] = list(request.chunks)
     if not chunks:
         msg = "summarize requires at least one chunk"
         raise ValueError(msg)
 
-    builder = ActionSummaryBuilder()
     canonicalizer = SummaryCanonicalizer()
     updater = SummaryStateUpdater()
 
-    state = canonicalizer.canonicalize(builder.build(chunks[0])).summary
+    head_summary, head_report = generator.build(
+        chunks[0],
+        evidence_records=evidence_records,
+    )
+    # The head determines whether the hierarchical summary's content was
+    # LLM-authored. Subsequent chunks are merged deterministically to
+    # preserve evidence grounding, so they do not affect the generator label.
+    reports: list[SummaryGeneratorReport] = [head_report]
+    state = canonicalizer.canonicalize(head_summary).summary
     for chunk in chunks[1:]:
         state = updater.update(state, chunk)
 
@@ -582,7 +705,7 @@ def _build_hierarchical_summary(request: SummarizeRequest) -> ActionSummary:
         overrides["task_signature"] = request.task_signature
     if request.summary_id:
         overrides["summary_id"] = request.summary_id
-    return state.model_copy(update=overrides)
+    return state.model_copy(update=overrides), reports
 
 
 _SUMMARIZE_RAW_POLICY_NAME = "raw_tool_log_default_deny"
