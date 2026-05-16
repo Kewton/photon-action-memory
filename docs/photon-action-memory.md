@@ -183,8 +183,48 @@ curl -fsS \
 
 Expected checks:
 
-- `status` is `stored`.
+- `status` is `stored` for clean seeds (or `stored_with_warnings` if the
+  answer-leak quality gate annotated the seed in `warn` mode).
 - `summary_id` is `anvil-sum-photon-001`.
+
+## Answer-leak Quality Gate
+
+`POST /v1/summary/upsert` runs an answer-leak quality gate before
+persisting any `ActionSummary` so seeds whose `facts[*]`, `next_hints[*]`,
+or `avoid[*]` text pre-spoils the task answer can be rejected, annotated,
+or just observed depending on the deployment mode.
+
+| Variable | Values | Default |
+|---|---|---|
+| `PHOTON_QUALITY_GATE_MODE` | `strict` / `warn` / `observe` | `warn` |
+
+- `strict`: any leak match returns `HTTP 422` with
+  `{"detail": {"error": "answer_leak_detected", "summary_id": ..., "quality_warnings": [...]}}`
+  and the seed is not persisted.
+- `warn` (default): the seed is persisted with `quality_check_status =
+  "warned"` and `quality_warnings` populated, and the response `status`
+  is `stored_with_warnings`. Downstream retrieval applies a
+  `quality_warned` attenuation factor so warned seeds rank below clean
+  equivalents.
+- `observe`: the seed is persisted unchanged; warnings are emitted to
+  the operator log only. Use this mode to size impact before flipping to
+  `warn` or `strict`.
+
+Patterns currently guarded (see
+`photon_action_memory/governance/answer_leak.py` for the SSOT):
+
+| Pattern | Triggers on |
+|---|---|
+| `output_literal_json` | inline JSON object literal containing a `"key": value` pair |
+| `output_key_enumeration` | "with keys / fields / columns X, Y, Z" (3+ identifiers enumerated as answer schema) |
+| `direct_print_answer` | "prints / outputs / returns / shows a JSON object …" |
+| `stdout_forecast` | "stdout will / contains / shows / is …" |
+| `answer_assertion` | "the answer / result / output / response is …" |
+| `numeric_answer_equality` | "`identifier = N`" / "`identifier equals N`" assertions |
+
+The DB column `action_summaries.quality_check_status` is added by a
+backwards-compatible migration; existing rows default to `"unchecked"`
+so seeds that pre-date the gate keep their current admission behaviour.
 
 ## Focused Verification
 

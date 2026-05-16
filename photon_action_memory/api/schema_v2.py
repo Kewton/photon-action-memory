@@ -41,6 +41,7 @@ ContextPackMode = Literal["summary_only", "summary_plus_evidence", "none"]
 HypothesisStatus = Literal["open", "confirmed", "rejected"]
 ApplicabilityScope = Literal["repo", "task_signature", "universal"]
 UniversalSeverity = Literal["info", "warning", "critical"]
+QualityCheckStatus = Literal["unchecked", "clean", "warned", "rejected"]
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +247,8 @@ class ActionSummary(SidecarModel):
     validity: Validity = Field(default_factory=Validity)
     applicability_scope: ApplicabilityScope | str = "repo"
     universal_metadata: UniversalMetadata | None = None
+    quality_warnings: list[str] = Field(default_factory=list)
+    quality_check_status: QualityCheckStatus | str = "unchecked"
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +664,7 @@ __all__ = [
     "NextHint",
     "OmittedEvidence",
     "OmittedItem",
+    "QualityCheckStatus",
     "RiskLevel",
     "SchemaVersionV2",
     "StalenessStatus",

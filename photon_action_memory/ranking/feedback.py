@@ -44,6 +44,12 @@ MAX_QUALITY_BOOST: float = 0.2
 # (0.30) and the per-status hard caps still apply.
 MAX_USER_SIGNAL_BOOST: float = 0.1
 
+# Issue #119: multiplicative attenuation for seeds the answer-leak gate
+# flagged as "warned" at upsert time. 0.5 halves the boosted score so a
+# warned seed can still surface when nothing else matches but never
+# outranks a comparable clean seed.
+QUALITY_WARNED_FACTOR: float = 0.5
+
 _BLOCKED_STATUSES: frozenset[str] = frozenset({"stale", "contradicted", "unsafe"})
 
 
@@ -68,6 +74,7 @@ def apply_feedback_boost(
     max_boost: float = MAX_QUALITY_BOOST,
     user_signal: float = 0.0,
     max_user_boost: float = MAX_USER_SIGNAL_BOOST,
+    quality_check_status: str = "unchecked",
 ) -> float:
     """Apply a bounded feedback quality boost to a base score.
 
@@ -80,8 +87,15 @@ def apply_feedback_boost(
     ``PackFeedback.user_signal_score`` (Anvil PR #599). It stacks on top
     of the implicit-success boost so an explicit thumbs-up outranks an
     equivalent implicit success.
+
+    ``quality_check_status`` is the answer-leak gate status carried on
+    the ActionSummary (Issue #119). When ``"warned"`` the boosted score
+    is multiplied by :data:`QUALITY_WARNED_FACTOR` so prompt-spoiling
+    seeds rank below their clean equivalents.
     """
     boosted = _clamp(base_score + quality_score * max_boost + user_signal * max_user_boost)
+    if quality_check_status == "warned":
+        boosted = _clamp(boosted * QUALITY_WARNED_FACTOR)
     return _clamp(min(boosted, _score_cap(status)))
 
 
@@ -121,16 +135,20 @@ class FeedbackAdjustedContextScorer:
         base_results = self._base.score_admission(summaries, task_text=task_text)
         adjusted: list[AdmissionScore] = []
         for summary, base in zip(summaries, base_results, strict=False):
+            quality_status = _quality_check_status(summary)
             new_score = apply_feedback_boost(
                 base.score,
                 summary.validity.status,
                 self._feedback.quality_score,
                 user_signal=self._feedback.user_signal_score,
+                quality_check_status=quality_status,
             )
             reason = (
                 f"{base.reason} feedback_boost={self._feedback.quality_score:.2f}"
                 f" user_signal={self._feedback.user_signal_score:.2f}"
             )
+            if quality_status == "warned":
+                reason += " quality_warned_attenuated"
             result = AdmissionScore(
                 summary_id=summary.summary_id,
                 score=new_score,
@@ -185,16 +203,20 @@ class FeedbackAdjustedContextScorer:
         base_results = self._base.score_summary_usefulness(summaries, task_text=task_text)
         adjusted: list[SummaryUsefulnessScore] = []
         for summary, base in zip(summaries, base_results, strict=False):
+            quality_status = _quality_check_status(summary)
             new_score = apply_feedback_boost(
                 base.score,
                 summary.validity.status,
                 self._feedback.quality_score,
                 user_signal=self._feedback.user_signal_score,
+                quality_check_status=quality_status,
             )
             reason = (
                 f"{base.reason} feedback_boost={self._feedback.quality_score:.2f}"
                 f" user_signal={self._feedback.user_signal_score:.2f}"
             )
+            if quality_status == "warned":
+                reason += " quality_warned_attenuated"
             result = SummaryUsefulnessScore(
                 summary_id=summary.summary_id,
                 score=new_score,
@@ -215,10 +237,25 @@ class FeedbackAdjustedContextScorer:
         return self._base.score_staleness_risk(summaries)
 
 
+def _quality_check_status(summary: ActionSummary) -> str:
+    """Read ``quality_check_status`` from a summary defensively.
+
+    Older fixtures or summaries built before Issue #119 may not carry the
+    attribute when validated against a schema that pre-dates this column.
+    Treat anything other than the known states as ``"unchecked"`` so the
+    attenuation path is gated correctly.
+    """
+    raw = getattr(summary, "quality_check_status", None)
+    if isinstance(raw, str) and raw:
+        return raw
+    return "unchecked"
+
+
 __all__ = [
     "CONTRADICTED_MAX_SCORE",
     "MAX_QUALITY_BOOST",
     "MAX_USER_SIGNAL_BOOST",
+    "QUALITY_WARNED_FACTOR",
     "STALE_MAX_SCORE",
     "FeedbackAdjustedContextScorer",
     "apply_feedback_boost",
