@@ -565,6 +565,7 @@ class ContextPackEvalEvent(SidecarModel):
     outcome_detail: str | None = None
     latency_ms: float | None = Field(default=None, ge=0)
     summary_ids_adopted: list[str] = Field(default_factory=list)
+    summary_ids_adopted_truncated: bool = False
 
 
 class EvaluateRequest(SidecarModel):
