@@ -360,6 +360,7 @@ def create_app(
                     "outcome_detail": evt.outcome_detail,
                     "latency_ms": evt.latency_ms,
                     "summary_ids_adopted": evt.summary_ids_adopted,
+                    "summary_ids_adopted_truncated": evt.summary_ids_adopted_truncated,
                 }
                 event_store.append(payload)
                 logged += 1

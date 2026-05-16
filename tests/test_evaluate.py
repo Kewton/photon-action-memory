@@ -160,6 +160,56 @@ def test_evaluate_with_evidence_expand_fields(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Issue #115: per-seed feedback fields must reach the event store payload.
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_persists_summary_ids_adopted_fields(tmp_path: Path) -> None:
+    client, store = _make_client(tmp_path)
+    body = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "eval-req-115a",
+        "context_pack_event": {
+            "context_pack_request_id": "pack-req-115a",
+            "adoption_status": "adopted",
+            "items_adopted_count": 2,
+            "items_ignored_count": 0,
+            "outcome": "success",
+            "summary_ids_adopted": ["sum-1", "sum-2"],
+            "summary_ids_adopted_truncated": True,
+        },
+    }
+    response = client.post("/v1/evaluate", json=body)
+    assert response.status_code == 200
+    assert response.json()["logged"] == 1
+    stored = store.list_events()[0]
+    assert stored.payload["summary_ids_adopted"] == ["sum-1", "sum-2"]
+    assert stored.payload["summary_ids_adopted_truncated"] is True
+
+
+def test_evaluate_legacy_anvil_omits_summary_ids_fields(tmp_path: Path) -> None:
+    """Pre-#596 Anvil clients omit both fields — defaults must persist."""
+    client, store = _make_client(tmp_path)
+    body = {
+        "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+        "request_id": "eval-req-115b",
+        "context_pack_event": {
+            "context_pack_request_id": "pack-req-115b",
+            "adoption_status": "adopted",
+            "items_adopted_count": 1,
+            "items_ignored_count": 0,
+            "outcome": "success",
+        },
+    }
+    response = client.post("/v1/evaluate", json=body)
+    assert response.status_code == 200
+    assert response.json()["logged"] == 1
+    stored = store.list_events()[0]
+    assert stored.payload["summary_ids_adopted"] == []
+    assert stored.payload["summary_ids_adopted_truncated"] is False
+
+
+# ---------------------------------------------------------------------------
 # Schema round-trip
 # ---------------------------------------------------------------------------
 
