@@ -60,6 +60,10 @@ from photon_action_memory.context.raw_policy import (
 )
 from photon_action_memory.context.render import estimate_tokens, render_summary
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
+from photon_action_memory.governance.answer_leak import (
+    QualityReport,
+    evaluate_summary_quality,
+)
 from photon_action_memory.governance.contradiction import (
     ContradictionPair,
     detect_contradictions,
@@ -84,6 +88,64 @@ from photon_action_memory.ranking.guards import fallback_warnings
 
 _UNIVERSAL_MAX_ITEMS = 5
 _UNIVERSAL_MAX_TOKENS = 500
+
+_QUALITY_GATE_MODE_ENV = "PHOTON_QUALITY_GATE_MODE"
+_QUALITY_GATE_MODES: frozenset[str] = frozenset({"strict", "warn", "observe"})
+_DEFAULT_QUALITY_GATE_MODE = "warn"
+
+
+def _quality_gate_mode() -> str:
+    """Resolve the answer-leak quality-gate mode from the environment.
+
+    Unknown values fall back to the default ``warn`` instead of disabling
+    the gate so a misconfigured deployment never silently regresses.
+    """
+    raw = (os.environ.get(_QUALITY_GATE_MODE_ENV) or "").strip().lower()
+    if raw in _QUALITY_GATE_MODES:
+        return raw
+    return _DEFAULT_QUALITY_GATE_MODE
+
+
+def _apply_answer_leak_gate(
+    summary: ActionSummary,
+    mode: str,
+) -> tuple[ActionSummary, QualityReport, str]:
+    """Run the answer-leak gate and return (summary, report, upsert_status).
+
+    The returned summary carries ``quality_warnings`` and
+    ``quality_check_status`` populated from the report. In ``observe``
+    mode the summary is left unchanged (so existing seeds don't get
+    relabelled by simply being re-upserted) but the report is still
+    returned for logging.
+    """
+    report = evaluate_summary_quality(summary)
+    if mode == "observe":
+        if report.status != "clean":
+            logger.warning(
+                "answer-leak observe mode: summary=%s warnings=%s",
+                summary.summary_id,
+                "; ".join(report.warnings),
+            )
+        return summary, report, "stored"
+
+    if mode == "strict" and report.status != "clean":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "answer_leak_detected",
+                "summary_id": summary.summary_id,
+                "quality_warnings": list(report.warnings),
+            },
+        )
+
+    annotated = summary.model_copy(
+        update={
+            "quality_warnings": list(report.warnings),
+            "quality_check_status": report.status,
+        }
+    )
+    upsert_status = "stored_with_warnings" if report.status == "warned" else "stored"
+    return annotated, report, upsert_status
 
 
 class SummaryUpsertRequest(SidecarModel):
@@ -156,15 +218,17 @@ def create_app(
 
     @app.post("/v1/summary/upsert", response_model=SummaryUpsertResponse)
     def upsert_summary(request: SummaryUpsertRequest) -> SummaryUpsertResponse:
+        mode = _quality_gate_mode()
+        annotated, _report, upsert_status = _apply_answer_leak_gate(request.summary, mode)
         try:
-            _summary_store.upsert(request.summary)
+            _summary_store.upsert(annotated)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return SummaryUpsertResponse(
             schema_version=DEFAULT_SCHEMA_VERSION_V2,
             request_id=request.request_id,
-            summary_id=request.summary.summary_id,
-            status="stored",
+            summary_id=annotated.summary_id,
+            status=upsert_status,
         )
 
     @app.post("/v1/context/pack", response_model=ContextPackResponse)

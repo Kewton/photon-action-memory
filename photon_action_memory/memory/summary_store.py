@@ -43,25 +43,29 @@ class SummaryStore:
             (summary.summary_id,),
         ).fetchone()
         created_at = row["created_at"] if row else now
+        quality_status = str(getattr(summary, "quality_check_status", "unchecked") or "unchecked")
         with self._connection:
             self._connection.execute(
                 """
                 INSERT INTO action_summaries
                     (summary_id, repo_id, task_signature, validity_status,
+                     quality_check_status,
                      created_at, updated_at, payload_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(summary_id) DO UPDATE SET
-                    repo_id            = excluded.repo_id,
-                    task_signature     = excluded.task_signature,
-                    validity_status    = excluded.validity_status,
-                    updated_at         = excluded.updated_at,
-                    payload_json       = excluded.payload_json
+                    repo_id              = excluded.repo_id,
+                    task_signature       = excluded.task_signature,
+                    validity_status      = excluded.validity_status,
+                    quality_check_status = excluded.quality_check_status,
+                    updated_at           = excluded.updated_at,
+                    payload_json         = excluded.payload_json
                 """,
                 (
                     summary.summary_id,
                     summary.repo_id,
                     summary.task_signature,
                     summary.validity.status,
+                    quality_status,
                     created_at,
                     now,
                     payload_json,
@@ -263,14 +267,15 @@ class SummaryStore:
                 """
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS action_summaries (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    summary_id      TEXT NOT NULL UNIQUE,
-                    repo_id         TEXT,
-                    task_signature  TEXT,
-                    validity_status TEXT NOT NULL DEFAULT 'valid',
-                    created_at      TEXT NOT NULL,
-                    updated_at      TEXT NOT NULL,
-                    payload_json    TEXT NOT NULL
+                    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    summary_id           TEXT NOT NULL UNIQUE,
+                    repo_id              TEXT,
+                    task_signature       TEXT,
+                    validity_status      TEXT NOT NULL DEFAULT 'valid',
+                    quality_check_status TEXT NOT NULL DEFAULT 'unchecked',
+                    created_at           TEXT NOT NULL,
+                    updated_at           TEXT NOT NULL,
+                    payload_json         TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_summaries_repo
                     ON action_summaries (repo_id);
@@ -289,6 +294,29 @@ class SummaryStore:
                     updated_at              TEXT NOT NULL
                 );
                 """
+            )
+            # Backwards-compatible migration for databases created before
+            # Issue #119 — add the quality_check_status column in place if
+            # the existing table is missing it. ``CREATE TABLE IF NOT EXISTS``
+            # above is a no-op for pre-existing tables, so the new column
+            # only lands via ALTER on old DBs.
+            existing_columns = {
+                row["name"]
+                for row in self._connection.execute(
+                    "PRAGMA table_info(action_summaries)"
+                ).fetchall()
+            }
+            if "quality_check_status" not in existing_columns:
+                self._connection.execute(
+                    "ALTER TABLE action_summaries "
+                    "ADD COLUMN quality_check_status TEXT NOT NULL "
+                    "DEFAULT 'unchecked'"
+                )
+            # Create the quality index AFTER the migration so the column
+            # is guaranteed to exist on both fresh and migrated DBs.
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_summaries_quality "
+                "ON action_summaries (quality_check_status)"
             )
 
 
