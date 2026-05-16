@@ -265,3 +265,56 @@ def test_summarize_overrides_summary_level_when_built_at_chunk(tmp_path: Path) -
     stored = summary_store.get("sum-case-override")
     assert stored is not None
     assert stored.summary_level == "case"
+
+
+# ---------------------------------------------------------------------------
+# Issue #121 — generator telemetry (default = rule_based, LLM falls back when MLX missing)
+# ---------------------------------------------------------------------------
+
+
+def test_summarize_default_reports_rule_based_generator(tmp_path: Path) -> None:
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    app = create_app(
+        SQLiteEventStore(tmp_path / "events.sqlite"),
+        summary_store=summary_store,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/summarize",
+            json=_summarize_body(
+                summary_level="turn",
+                summary_id="sum-default-gen",
+            ),
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generator_used"] == "rule_based"
+    assert body["generator_fallback_reason"] is None
+
+
+def test_summarize_llm_mode_without_mlx_falls_back(tmp_path: Path) -> None:
+    """With PHOTON_SUMMARY_GENERATOR=llm but no MLX installed, the response
+    must report the LLM was attempted and rule-based was used as the
+    fail-open fallback, with the proper enum reason."""
+    from photon_action_memory.memory.summary_generator import make_summary_generator
+
+    generator = make_summary_generator(env={"PHOTON_SUMMARY_GENERATOR": "llm"})
+    summary_store = SummaryStore(tmp_path / "summaries.sqlite")
+    app = create_app(
+        SQLiteEventStore(tmp_path / "events.sqlite"),
+        summary_store=summary_store,
+        summary_generator=generator,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/summarize",
+            json=_summarize_body(
+                summary_level="turn",
+                summary_id="sum-llm-fallback",
+            ),
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generator_used"] == "rule_based"
+    assert body["generator_fallback_reason"] in {"mlx_unavailable", "model_unavailable"}
+    assert body["status"] == "fallback_rule_based"

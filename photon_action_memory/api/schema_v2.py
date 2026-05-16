@@ -43,6 +43,19 @@ ApplicabilityScope = Literal["repo", "task_signature", "universal"]
 UniversalSeverity = Literal["info", "warning", "critical"]
 QualityCheckStatus = Literal["unchecked", "clean", "warned", "rejected"]
 
+SummaryGeneratorUsed = Literal["rule_based", "llm"]
+SummaryGeneratorFallbackReasonLiteral = Literal[
+    "mlx_unavailable",
+    "model_unavailable",
+    "generation_exception",
+    "empty_output",
+    "invalid_json",
+    "schema_validation_failed",
+    "quality_gate_rejected",
+    "fidelity_invalid",
+    "disabled",
+]
+
 
 # ---------------------------------------------------------------------------
 # Shared sub-models
@@ -531,6 +544,8 @@ class SummarizeResponse(SidecarModel):
     admission_decisions: list[ContextAdmissionDecision] = Field(default_factory=list)
     omitted: list[OmittedItem] = Field(default_factory=list)
     evidence_ids_referenced: list[str] = Field(default_factory=list)
+    generator_used: SummaryGeneratorUsed | str = "rule_based"
+    generator_fallback_reason: SummaryGeneratorFallbackReasonLiteral | str | None = None
 
 
 # ---------------------------------------------------------------------------
