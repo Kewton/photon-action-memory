@@ -129,6 +129,7 @@ _STALENESS_RISK: dict[str, float] = {
     "valid": 0.0,
     "partial": 0.3,
     "unknown": 0.5,
+    "needs_review": 0.6,
     "stale": 0.8,
     "contradicted": 1.0,
 }
@@ -138,6 +139,7 @@ _VALIDITY_ADMISSION_FACTOR: dict[str, float] = {
     "valid": 1.0,
     "partial": 0.7,
     "unknown": 0.5,
+    "needs_review": 0.4,
     "stale": 0.2,
     "contradicted": 0.1,
 }

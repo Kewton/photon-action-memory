@@ -36,7 +36,7 @@ SummaryLevel = Literal["turn", "chunk", "session", "case"]
 AdmissionDecision = Literal["admit", "omit", "expand", "defer", "deny"]
 ExpandPolicy = Literal["on_demand_only", "always", "deny"]
 StalenessStatusKind = Literal["valid", "stale", "partial", "contradicted", "unknown"]
-ValidityStatusKind = Literal["valid", "stale", "partial", "contradicted"]
+ValidityStatusKind = Literal["valid", "stale", "partial", "contradicted", "needs_review"]
 ContextPackMode = Literal["summary_only", "summary_plus_evidence", "none"]
 HypothesisStatus = Literal["open", "confirmed", "rejected"]
 ApplicabilityScope = Literal["repo", "task_signature", "universal"]
@@ -587,6 +587,39 @@ class EvaluateResponse(SidecarModel):
     warnings: list[ContextPackWarning] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# POST /v1/seeds/audit/contradictions
+# ---------------------------------------------------------------------------
+
+
+class ContradictionPairModel(SidecarModel):
+    """One contradictory pair detected by the governance audit."""
+
+    summary_a_id: str
+    summary_b_id: str
+    kind: str
+    evidence: str
+
+
+class ContradictionAuditRequest(SidecarModel):
+    """Request body for POST /v1/seeds/audit/contradictions."""
+
+    schema_version: SchemaVersionV2
+    request_id: str
+    repo_id: str | None = None
+    task_signature: str | None = None
+    limit: int = Field(default=200, ge=1, le=2000)
+
+
+class ContradictionAuditResponse(SidecarModel):
+    """Response body for POST /v1/seeds/audit/contradictions."""
+
+    schema_version: SchemaVersionV2
+    request_id: str
+    pairs: list[ContradictionPairModel] = Field(default_factory=list)
+    scanned: int = Field(default=0, ge=0)
+
+
 __all__ = [
     "DEFAULT_SCHEMA_VERSION_V2",
     "ActionChunk",
@@ -607,6 +640,9 @@ __all__ = [
     "ContextPackRequest",
     "ContextPackResponse",
     "ContextPackWarning",
+    "ContradictionAuditRequest",
+    "ContradictionAuditResponse",
+    "ContradictionPairModel",
     "EvaluateRequest",
     "EvaluateResponse",
     "EvidenceExpandBudget",

@@ -33,6 +33,9 @@ from photon_action_memory.api.schema_v2 import (
     ContextPackRequest,
     ContextPackResponse,
     ContextPackWarning,
+    ContradictionAuditRequest,
+    ContradictionAuditResponse,
+    ContradictionPairModel,
     EvaluateRequest,
     EvaluateResponse,
     EvidenceExpandRequest,
@@ -57,6 +60,10 @@ from photon_action_memory.context.raw_policy import (
 )
 from photon_action_memory.context.render import estimate_tokens, render_summary
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
+from photon_action_memory.governance.contradiction import (
+    ContradictionPair,
+    detect_contradictions,
+)
 from photon_action_memory.memory.chunks import ActionChunker
 from photon_action_memory.memory.evidence import EvidenceExpander
 from photon_action_memory.memory.retrieval import (
@@ -167,6 +174,8 @@ def create_app(
             retriever = SummaryRetriever(_summary_store)
             repo_id = _context_repo_id(request)
             resolved = _resolve_context_summaries(retriever, request, repo_id=repo_id)
+            for pair in detect_contradictions(resolved):
+                route_warnings.append(_contradiction_warning(pair))
             raw_items = _extract_raw_items(request)
             feedback_map = _summary_store.get_feedback_map([s.summary_id for s in resolved])
             pack, decisions = build_context_pack(
@@ -381,7 +390,42 @@ def create_app(
             warnings=route_warnings,
         )
 
+    @app.post("/v1/seeds/audit/contradictions", response_model=ContradictionAuditResponse)
+    def audit_contradictions(
+        request: ContradictionAuditRequest,
+    ) -> ContradictionAuditResponse:
+        try:
+            summaries = _summary_store.search(
+                repo_id=request.repo_id,
+                task_signature=request.task_signature,
+                limit=request.limit,
+            )
+            pairs = detect_contradictions(summaries)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return ContradictionAuditResponse(
+            schema_version=DEFAULT_SCHEMA_VERSION_V2,
+            request_id=request.request_id,
+            pairs=[
+                ContradictionPairModel(
+                    summary_a_id=pair.summary_a_id,
+                    summary_b_id=pair.summary_b_id,
+                    kind=pair.kind,
+                    evidence=pair.evidence,
+                )
+                for pair in pairs
+            ],
+            scanned=len(summaries),
+        )
+
     return app
+
+
+def _contradiction_warning(pair: ContradictionPair) -> ContextPackWarning:
+    return ContextPackWarning(
+        kind="contradiction_detected",
+        message=(f"{pair.kind}: {pair.summary_a_id} vs {pair.summary_b_id} - {pair.evidence}"),
+    )
 
 
 def _summarize_inline_chunks(
