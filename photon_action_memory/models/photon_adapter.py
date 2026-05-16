@@ -22,6 +22,7 @@ from photon_action_memory.models.checkpoint import (
     PhotonCheckpoint,
     load_checkpoint,
     load_checkpoint_manifest,
+    verify_checkpoint_integrity,
 )
 from photon_action_memory.models.state import (
     ActionCandidate,
@@ -66,6 +67,8 @@ class PhotonMLXAdapter:
         import_module: Callable[[str], ModuleType | Any] | None = None,
     ) -> PhotonMLXAdapter:
         """Build an adapter after validating checkpoint and importing MLX lazily."""
+        if strict:
+            verify_checkpoint_integrity(_checkpoint_dir(Path(path)), strict=True)
         checkpoint = load_checkpoint_manifest(path, strict=strict)
         return cls(checkpoint=checkpoint, mlx_core=_import_mlx_core(import_module))
 
@@ -163,7 +166,7 @@ def is_model_available(
     strict = _strict_checkpoint_mode() if checkpoint_path is None else False
     try:
         PhotonMLXAdapter.from_checkpoint(path, strict=strict, import_module=import_module)
-    except (CheckpointError, PhotonAdapterError):
+    except (OSError, ValueError, CheckpointError, PhotonAdapterError):
         return False
     return True
 
@@ -187,7 +190,7 @@ def score_suggestions_with_optional_adapter(
         state = PhotonScoringState.from_sidecar_request(request, evidence=evidence)
         action_candidates = [_candidate_from_suggestion(suggestion) for suggestion in suggestions]
         scored = adapter.score_actions(state, action_candidates)
-    except (CheckpointError, PhotonAdapterError):
+    except (OSError, ValueError, CheckpointError, PhotonAdapterError):
         return None
 
     score_by_index = {index: item.score for index, item in enumerate(scored)}
@@ -212,6 +215,10 @@ def score_suggestions_with_optional_adapter(
 def _strict_checkpoint_mode() -> bool:
     raw_value = os.environ.get(CHECKPOINT_STRICT_ENV, "").strip().lower()
     return raw_value in {"1", "true", "yes", "on", "strict"}
+
+
+def _checkpoint_dir(path: Path) -> Path:
+    return path if path.is_dir() else path.parent
 
 
 def _import_mlx_core(
