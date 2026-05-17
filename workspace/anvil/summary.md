@@ -42,6 +42,29 @@ This file collects the Anvil-facing notes added by the Anvil integration
 issues. It includes both the evidence expansion contract from Issue #66 and
 the summary store design note from Issue #68.
 
+## Current photon-action-memory Status
+
+Current `develop` sidecars expose the full Anvil turn lifecycle:
+
+```text
+/v1/summarize -> /v1/summary/upsert -> /v1/context/pack
+              -> /v1/evidence/expand -> /v1/evaluate
+```
+
+Important defaults:
+
+| Area | Current behavior |
+|---|---|
+| Summary generation | `PHOTON_SUMMARY_GENERATOR=rule_based` by default. |
+| LLM summary draft | Opt-in with `PHOTON_SUMMARY_GENERATOR=llm`; falls back to rule-based unless abort policy is selected. |
+| PHOTON checkpoint scorer | `PHOTON_ACTION_MEMORY_CHECKPOINT` is available for scorer-boundary testing and evaluation. |
+| Context pack ranking | Still deterministic/feedback-adjusted by default; trained PHOTON checkpoint wiring is a follow-up. |
+| Raw evidence | Raw stdout/stderr remains default-deny for prompt-visible memory. |
+
+See `docs/photon-action-memory.md` for photon-side startup and smoke checks,
+and `docs/anvil-integration.md` for Anvil runtime sequencing and fallback
+ownership.
+
 ## Evidence Expansion Contract
 
 Endpoint: `POST /v1/evidence/expand`
@@ -190,9 +213,12 @@ Key modules:
 Primary docs:
 
 - `docs/photon-action-memory.md` — photon-side sidecar startup and API smoke
-  checks.
+  checks, including `/v1/summarize`, optional LLM draft generation, and
+  checkpoint scorer evaluation.
 - `docs/anvil-integration.md` — Anvil env/defaults, shadow/canary/rollback
   checklists, fixture updates, and troubleshooting ownership.
+- `workspace/v0.4.0/` — v0.4.0 LLM/PHOTON planning and checkpoint scorer
+  evaluation notes.
 
 Operational defaults stay aligned with the Anvil docs:
 

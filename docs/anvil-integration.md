@@ -65,7 +65,7 @@ export ANVIL_PHOTON_CANARY=true
 | Endpoint | Anvil call timing | Expected behavior |
 |---|---|---|
 | `GET /health` | Startup and diagnostics | Returns sidecar health. |
-| `POST /v1/summarize` | At a turn boundary, after chunks are assembled (v0.4.0 P1+) | Generates `ActionSummary` from the supplied `chunk_ids`. |
+| `POST /v1/summarize` | At a turn boundary, after chunks are assembled | Generates and validates `ActionSummary` records from `chunk_ids`, inline chunks, or draft summaries. |
 | `POST /v1/summary/upsert` | After `/v1/summarize` returns, or when Anvil already has a summary to persist | Stores `ActionSummary` for later retrieval. |
 | `POST /v1/context/pack` | Before prompt assembly | Returns admitted memory items and denial decisions. |
 | `POST /v1/evidence/expand` | Optional, after context pack selection | Expands selected evidence only; raw output remains denied in Anvil profile. |
@@ -78,11 +78,15 @@ Required sequence for a turn:
                        -> optional evidence_expand -> evaluate
 ```
 
-`/v1/summarize` is new in v0.4.0 P1. Until P1 ships, Anvil should skip the
-summarize step and continue from `/v1/summary/upsert` with the existing
-summary builder; the smoke runner in this repo
-(`scripts/anvil_v1_summarize_smoke.py`) records `status=summarize_stub`
-when the sidecar returns 501.
+Current `develop` sidecars implement `/v1/summarize`. Anvil should call it at
+turn boundaries when chunk data is available, then persist the returned summary
+through `/v1/summary/upsert` before requesting `/v1/context/pack`.
+
+For compatibility with old sidecars or empty local stores, Anvil may keep a
+fixture or local-builder fallback. The smoke runner in this repo
+(`scripts/anvil_v1_summarize_smoke.py`) still records fixture-fallback statuses
+when a live summary is unavailable, but 501 is no longer the expected current
+sidecar behavior.
 
 ### `/v1/summarize` Anvil-side request fields
 
@@ -97,6 +101,21 @@ when the sidecar returns 501.
 | `policy.separate_fact_and_hypothesis` | yes | Should remain `true` to keep hypothesis-as-fact pollution out of the prompt. |
 | `policy.include_failed_attempts` | yes | Should remain `true` so `failed_attempts` reaches the next turn. |
 | `policy.include_avoid_guidance` | yes | Should remain `true` so `avoid` reaches the next turn. |
+
+### `/v1/summarize` response fields Anvil should log
+
+| Field | Meaning |
+|---|---|
+| `sidecar_status` | `ok`, `degraded`, or `fail-open` style status for the call. |
+| `status` | Summarize result status; `ok` for clean live generation and `degraded` for recoverable fallback/error paths. |
+| `summary.summary_id` | Summary ID to pass to `/v1/summary/upsert` and later `candidate_summary_ids`. |
+| `validation.status` | Summary fidelity result. |
+| `generator_used` | `rule_based` or `llm`. |
+| `generator_fallback_reason` | Stable reason enum when the LLM path falls back, otherwise `null`. |
+
+`generator_used=llm` is possible only when photon-action-memory is started with
+`PHOTON_SUMMARY_GENERATOR=llm` and the local MLX model path succeeds. The
+default is `rule_based`.
 
 ### `/v1/summarize` timing
 
@@ -231,5 +250,5 @@ Then run the commands in `docs/photon-action-memory.md`:
 - `GET /health`
 - `POST /v1/context/pack`
 - `POST /v1/evaluate`
+- `POST /v1/summarize`
 - `POST /v1/summary/upsert`
-
