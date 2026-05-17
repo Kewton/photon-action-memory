@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from photon_action_memory.api.schema_v2 import ActionSummary, UniversalFilters
+from photon_action_memory.eval.ranking_log import RankingLogStore
 from photon_action_memory.eval.summary_feedback import (
     SummaryFeedbackRecord,
     classify_outcome,
@@ -24,6 +25,7 @@ class SummaryStore:
         self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._initialize_schema()
+        self.ranking_log = RankingLogStore(self._connection)
 
     def close(self) -> None:
         self._connection.close()

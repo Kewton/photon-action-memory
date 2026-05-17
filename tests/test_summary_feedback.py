@@ -458,3 +458,79 @@ def test_evaluate_excluded_status_does_not_update_feedback(tmp_path: Path) -> No
     response = client.post("/v1/evaluate", json=body)
     assert response.status_code == 200
     assert summaries.get_feedback("sum-x") is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #126 — ranking log + feedback export end-to-end
+# ---------------------------------------------------------------------------
+
+
+def test_context_pack_writes_ranking_log_without_raw_text(tmp_path: Path) -> None:
+    """`/v1/context/pack` populates context_pack_ranking_log with no text."""
+    client, _, summaries = _make_client(tmp_path)
+    summaries.upsert(_summary("sum-ranklog", fact_text="alpha foxtrot fact"))
+    response = client.post(
+        "/v1/context/pack",
+        json={
+            "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+            "request_id": "pack-rank-1",
+            "agent": {"name": "anvil"},
+            "repo": {"root": "/r", "name": "repo-a"},
+            "task": {"user_request": "x", "mode": "act"},
+            "working_memory": {},
+            "candidate_summary_ids": ["sum-ranklog"],
+        },
+    )
+    assert response.status_code == 200
+
+    entries = summaries.ranking_log.iter_entries(context_pack_request_id="pack-rank-1")
+    assert entries, "expected ranking log entries to be written"
+    for entry in entries:
+        # The ranking log is forbidden from carrying rendered prompt text.
+        assert entry.kind == "action_summary"
+        assert entry.position >= 0
+        assert isinstance(entry.score, float)
+        assert isinstance(entry.selected, bool)
+        # The label is computable up front (no outcome yet → ignored/not_selected/gate).
+        assert entry.label() in {
+            "ignored",
+            "not_selected",
+            "omitted_by_gate",
+        }
+
+
+def test_evaluate_back_fills_ranking_log_outcome(tmp_path: Path) -> None:
+    """`/v1/evaluate` writes outcome_family back to ranking_log rows."""
+    client, _, summaries = _make_client(tmp_path)
+    summaries.upsert(_summary("sum-feedback-flow", fact_text="bravo golf fact"))
+    client.post(
+        "/v1/context/pack",
+        json={
+            "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+            "request_id": "pack-rank-2",
+            "agent": {"name": "anvil"},
+            "repo": {"root": "/r", "name": "repo-a"},
+            "task": {"user_request": "x", "mode": "act"},
+            "working_memory": {},
+            "candidate_summary_ids": ["sum-feedback-flow"],
+        },
+    )
+    client.post(
+        "/v1/evaluate",
+        json={
+            "schema_version": DEFAULT_SCHEMA_VERSION_V2,
+            "request_id": "eval-flow-1",
+            "context_pack_event": {
+                "context_pack_request_id": "pack-rank-2",
+                "adoption_status": "adopted",
+                "summary_ids_adopted": ["sum-feedback-flow"],
+                "outcome": "success",
+            },
+        },
+    )
+
+    entries = summaries.ranking_log.iter_entries(context_pack_request_id="pack-rank-2")
+    matched = [e for e in entries if e.summary_id == "sum-feedback-flow"]
+    assert matched, "expected outcome to be written to the matching log row"
+    assert matched[0].outcome_family == "success"
+    assert matched[0].label() == "adopted_success"
