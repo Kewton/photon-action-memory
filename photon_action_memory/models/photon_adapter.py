@@ -114,11 +114,23 @@ class PhotonMLXAdapter:
         ]
 
     def _score(self, kind: str, subject: str, state: PhotonScoringState) -> float:
+        suppressed = self.checkpoint.state.get("suppressed_ids")
+        if isinstance(suppressed, list | tuple | set | frozenset) and subject in suppressed:
+            # v2 suppression list — never let a banned id earn a positive score.
+            return 0.0
+
         base = _state_float(self.checkpoint.state.get("bias"), default=0.5)
         score = base
         score += _weight_for(self.checkpoint.state.get("action_weights"), kind)
         score += _weight_for(self.checkpoint.state.get("file_weights"), subject)
         score += _weight_for(self.checkpoint.state.get("evidence_weights"), subject)
+        # v2 buckets — only contribute when the kind matches the bucket.
+        if kind in ("summary", "action_summary"):
+            score += _weight_for(self.checkpoint.state.get("summary_weights"), subject)
+        elif kind in ("next_hint", "next_action"):
+            score += _weight_for(self.checkpoint.state.get("next_action_weights"), subject)
+        elif kind in ("failed_attempt", "avoid"):
+            score += _weight_for(self.checkpoint.state.get("avoid_weights"), subject)
         if subject and subject in state.task_text:
             score += 0.05
 

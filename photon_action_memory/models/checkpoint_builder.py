@@ -16,16 +16,27 @@ from pathlib import Path
 from typing import Literal
 
 from photon_action_memory.models.checkpoint import (
+    ACTION_MEMORY_STATE_FILENAME,
     ALLOWED_STATE_KEYS,
+    ALLOWED_STATE_KEYS_V2,
     CHECKPOINT_FORMAT,
+    CHECKPOINT_FORMAT_V2,
     CHECKPOINT_MANIFEST,
     INTEGRITY_FILENAME,
+    PHOTON_RUNTIME_DIRNAME,
     STATE_FILENAME,
     WEIGHTS_FILENAME,
     write_integrity_manifest,
 )
 
 WeightBucket = Literal["action_weights", "file_weights", "evidence_weights"]
+WeightBucketV2 = Literal[
+    "summary_weights",
+    "evidence_weights",
+    "next_action_weights",
+    "file_weights",
+    "avoid_weights",
+]
 
 _KIND_BUCKETS: Mapping[str, WeightBucket] = {
     "action": "action_weights",
@@ -34,6 +45,16 @@ _KIND_BUCKETS: Mapping[str, WeightBucket] = {
     "failed_attempt": "action_weights",
     "file": "file_weights",
     "evidence": "evidence_weights",
+}
+_KIND_BUCKETS_V2: Mapping[str, WeightBucketV2] = {
+    "summary": "summary_weights",
+    "action_summary": "summary_weights",
+    "evidence": "evidence_weights",
+    "next_action": "next_action_weights",
+    "next_hint": "next_action_weights",
+    "file": "file_weights",
+    "avoid": "avoid_weights",
+    "failed_attempt": "avoid_weights",
 }
 _DEFAULT_WEIGHTS_PAYLOAD = b"tiny action-memory PHOTON checkpoint placeholder\n"
 
@@ -48,6 +69,9 @@ class ActionMemoryCheckpointPaths:
     weights_path: Path
     integrity_path: Path | None
     model_version: str
+    format: str = CHECKPOINT_FORMAT
+    action_memory_state_path: Path | None = None
+    photon_runtime_dir: Path | None = None
 
 
 def build_action_memory_checkpoint_state(
@@ -99,25 +123,52 @@ def write_action_memory_checkpoint(
     training_state: Mapping[str, object] | None = None,
     weights_payload: bytes = _DEFAULT_WEIGHTS_PAYLOAD,
     write_integrity: bool = True,
+    format_version: str = CHECKPOINT_FORMAT,
+    source: Mapping[str, object] | None = None,
+    use_action_memory_sidecar: bool = False,
+    include_photon_runtime_stub: bool = False,
 ) -> ActionMemoryCheckpointPaths:
     """Write a small runtime checkpoint directory.
 
     The manifest carries scorer weights. ``state.json`` and ``weights.npz`` are
     present so strict integrity mode can verify the checkpoint package without
     needing to import MLX or download any model.
+
+    ``format_version`` selects between the v1 (``photon-action-memory.mlx.v1``)
+    and v2 (``photon-action-memory.v2``) manifest formats. v2 enables the
+    richer Phase 2 buckets (summary / next_action / avoid / suppressed_ids)
+    and may carry a ``source`` block plus an optional
+    ``action_memory_state.json`` sidecar.
     """
 
     version = model_version.strip()
     if not version:
         raise ValueError("model_version must be non-empty")
+    if format_version not in (CHECKPOINT_FORMAT, CHECKPOINT_FORMAT_V2):
+        raise ValueError(f"unsupported format_version: {format_version!r}")
+    if use_action_memory_sidecar and format_version != CHECKPOINT_FORMAT_V2:
+        raise ValueError("action_memory_state sidecar requires format v2")
+    if include_photon_runtime_stub and format_version != CHECKPOINT_FORMAT_V2:
+        raise ValueError("photon_runtime requires format v2")
+
     checkpoint_dir = Path(path)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest = {
-        "format": CHECKPOINT_FORMAT,
+    cleaned_state = _clean_runtime_state(state, format_version=format_version)
+    manifest: dict[str, object] = {
+        "format": format_version,
         "model_version": version,
-        "state": _clean_runtime_state(state),
     }
+    sidecar_path: Path | None = None
+    if use_action_memory_sidecar:
+        manifest["state"] = {}
+        sidecar_path = checkpoint_dir / ACTION_MEMORY_STATE_FILENAME
+        _atomic_write_json(sidecar_path, cleaned_state)
+    else:
+        manifest["state"] = cleaned_state
+    if source is not None:
+        manifest["source"] = dict(source)
+
     manifest_path = checkpoint_dir / CHECKPOINT_MANIFEST
     state_path = checkpoint_dir / STATE_FILENAME
     weights_path = checkpoint_dir / WEIGHTS_FILENAME
@@ -125,6 +176,20 @@ def write_action_memory_checkpoint(
     _atomic_write_json(manifest_path, manifest)
     _atomic_write_json(state_path, _default_training_state() | dict(training_state or {}))
     _atomic_write_bytes(weights_path, weights_payload)
+
+    runtime_dir: Path | None = None
+    if include_photon_runtime_stub:
+        runtime_dir = checkpoint_dir / PHOTON_RUNTIME_DIRNAME
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        marker = runtime_dir / "README.md"
+        if not marker.exists():
+            marker.write_text(
+                "# photon_runtime placeholder\n\n"
+                "This directory marks the checkpoint as carrying an optional "
+                "photon_runtime layer. The current build does not ship slim-ported "
+                "MLX code; see photon_action_memory/photon_runtime/UPSTREAM.md.\n",
+                encoding="utf-8",
+            )
 
     integrity_path: Path | None = None
     if write_integrity:
@@ -138,7 +203,49 @@ def write_action_memory_checkpoint(
         weights_path=weights_path,
         integrity_path=integrity_path,
         model_version=version,
+        format=format_version,
+        action_memory_state_path=sidecar_path,
+        photon_runtime_dir=runtime_dir,
     )
+
+
+def build_action_memory_checkpoint_state_v2(
+    records: Iterable[Mapping[str, object]],
+    *,
+    bias: float = 0.5,
+) -> dict[str, object]:
+    """Aggregate ``action-memory-feedback.v1`` records into a v2 state.
+
+    Records emitted by :mod:`photon_action_memory.eval.feedback_export` carry
+    ``kind``, ``key``, ``weight``, and ``safety_violation``. Safety
+    violations bypass the weight aggregation and land in
+    ``suppressed_ids`` so the scorer can ban them outright.
+    """
+    buckets: dict[str, object] = {
+        "summary_weights": {},
+        "evidence_weights": {},
+        "next_action_weights": {},
+        "file_weights": {},
+        "avoid_weights": {},
+    }
+    suppressed: set[str] = set()
+
+    for index, record in enumerate(records):
+        key = _key_from_record(record, index)
+        if record.get("safety_violation") is True:
+            suppressed.add(key)
+            continue
+        bucket = _bucket_from_record_v2(record, index)
+        weight = _weight_from_record(record, index)
+        bucket_values = buckets[bucket]
+        assert isinstance(bucket_values, dict)
+        current = float(bucket_values.get(key, 0.0))
+        bucket_values[key] = round(current + weight, 4)
+
+    state: dict[str, object] = {"bias": _coerce_number(bias, "bias")}
+    state.update(buckets)
+    state["suppressed_ids"] = sorted(suppressed)
+    return state
 
 
 def _bucket_from_record(record: Mapping[str, object], index: int) -> WeightBucket:
@@ -152,6 +259,18 @@ def _bucket_from_record(record: Mapping[str, object], index: int) -> WeightBucke
         if bucket is not None:
             return bucket
     raise ValueError(f"record {index} must include a supported kind or bucket")
+
+
+def _bucket_from_record_v2(record: Mapping[str, object], index: int) -> WeightBucketV2:
+    raw_bucket = record.get("bucket")
+    if isinstance(raw_bucket, str) and raw_bucket in _KIND_BUCKETS_V2.values():
+        return raw_bucket  # type: ignore[return-value]
+    raw_kind = record.get("kind")
+    if isinstance(raw_kind, str):
+        bucket = _KIND_BUCKETS_V2.get(raw_kind.strip().lower())
+        if bucket is not None:
+            return bucket
+    raise ValueError(f"record {index} must include a supported v2 kind or bucket")
 
 
 def _key_from_record(record: Mapping[str, object], index: int) -> str:
@@ -173,16 +292,54 @@ def _weight_from_record(record: Mapping[str, object], index: int) -> float:
     return 0.0
 
 
-def _clean_runtime_state(state: Mapping[str, object]) -> dict[str, object]:
-    unknown = sorted(set(state) - ALLOWED_STATE_KEYS)
+def _clean_runtime_state(
+    state: Mapping[str, object],
+    *,
+    format_version: str = CHECKPOINT_FORMAT,
+) -> dict[str, object]:
+    allowed = (
+        ALLOWED_STATE_KEYS_V2 if format_version == CHECKPOINT_FORMAT_V2 else ALLOWED_STATE_KEYS
+    )
+    unknown = sorted(set(state) - allowed)
     if unknown:
         raise ValueError(f"runtime state contains unsupported keys: {', '.join(unknown)}")
 
     clean: dict[str, object] = {}
     clean["bias"] = _coerce_number(state.get("bias", 0.5), "bias")
+    weight_buckets: tuple[str, ...]
+    if format_version == CHECKPOINT_FORMAT_V2:
+        weight_buckets = (
+            "summary_weights",
+            "evidence_weights",
+            "next_action_weights",
+            "file_weights",
+            "avoid_weights",
+            "action_weights",
+        )
+        # Only carry v1-style buckets if the caller provided them, otherwise
+        # omit them so the manifest stays compact.
+        for bucket in weight_buckets:
+            if bucket in state:
+                clean[bucket] = _clean_weight_mapping(state[bucket], bucket)
+        raw_suppressed = state.get("suppressed_ids", [])
+        clean["suppressed_ids"] = _clean_suppressed_ids(raw_suppressed)
+        return clean
     for bucket in ("action_weights", "file_weights", "evidence_weights"):
         clean[bucket] = _clean_weight_mapping(state.get(bucket, {}), bucket)
     return clean
+
+
+def _clean_suppressed_ids(raw: object) -> list[str]:
+    if isinstance(raw, str | bytes):
+        raise ValueError("suppressed_ids must be a list of strings")
+    if not isinstance(raw, Iterable):
+        raise ValueError("suppressed_ids must be a list of strings")
+    ids: list[str] = []
+    for item in raw:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("suppressed_ids entries must be non-empty strings")
+        ids.append(item.strip())
+    return sorted(set(ids))
 
 
 def _clean_weight_mapping(raw: object, label: str) -> dict[str, float]:
@@ -227,6 +384,9 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
 
 __all__ = [
     "ActionMemoryCheckpointPaths",
+    "WeightBucket",
+    "WeightBucketV2",
     "build_action_memory_checkpoint_state",
+    "build_action_memory_checkpoint_state_v2",
     "write_action_memory_checkpoint",
 ]

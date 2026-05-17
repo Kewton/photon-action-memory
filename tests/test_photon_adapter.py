@@ -175,3 +175,63 @@ def test_suggest_uses_configured_fake_mlx_checkpoint(
 
 def _raise_mlx() -> SimpleNamespace:
     raise ModuleNotFoundError("No module named 'mlx'", name="mlx")
+
+
+# ---------------------------------------------------------------------------
+# Issue #126 — v2 manifest acceptance + suppressed_ids enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_loader_accepts_v2_manifest_with_source_block(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "format": "photon-action-memory.v2",
+                "model_version": "action-memory-v2-test",
+                "state": {
+                    "bias": 0.1,
+                    "summary_weights": {"sum-good": 0.4},
+                    "suppressed_ids": ["sum-bad"],
+                },
+                "source": {"feedback_max_updated_at": "2026-05-17T00:00:00.000000+00:00"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    checkpoint = load_checkpoint_manifest(manifest, strict=True)
+    assert checkpoint.format == "photon-action-memory.v2"
+    assert checkpoint.state["summary_weights"] == {"sum-good": 0.4}
+    assert checkpoint.state["suppressed_ids"] == ["sum-bad"]
+    assert checkpoint.source["feedback_max_updated_at"]
+
+
+def test_adapter_returns_zero_for_suppressed_id(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "format": "photon-action-memory.v2",
+                "model_version": "v2-suppress-test",
+                "state": {
+                    "bias": 0.5,
+                    "summary_weights": {"sum-bad": 0.9},
+                    "suppressed_ids": ["sum-bad"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    adapter = PhotonMLXAdapter.from_checkpoint(
+        manifest,
+        import_module=lambda _name: _FakeMlx(),
+    )
+    from photon_action_memory.models.state import ActionCandidate, PhotonScoringState
+
+    state = PhotonScoringState(request_id="req", task_text="anything")
+    scored = adapter.score_actions(
+        state,
+        [ActionCandidate(kind="summary", target="sum-bad")],
+    )
+    assert scored[0].score == 0.0

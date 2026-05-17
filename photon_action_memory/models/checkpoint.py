@@ -18,17 +18,34 @@ from typing import Any
 _logger = logging.getLogger(__name__)
 
 CHECKPOINT_FORMAT = "photon-action-memory.mlx.v1"
+CHECKPOINT_FORMAT_V2 = "photon-action-memory.v2"
+SUPPORTED_CHECKPOINT_FORMATS: frozenset[str] = frozenset({CHECKPOINT_FORMAT, CHECKPOINT_FORMAT_V2})
 CHECKPOINT_MANIFEST = "manifest.json"
 INTEGRITY_FORMAT_VERSION = "1"
 STATE_FILENAME = "state.json"
 WEIGHTS_FILENAME = "weights.npz"
 INTEGRITY_FILENAME = "integrity.json"
+ACTION_MEMORY_STATE_FILENAME = "action_memory_state.json"
+PROMOTION_REPORT_FILENAME = "promotion_report.json"
+PHOTON_RUNTIME_DIRNAME = "photon_runtime"
+
 ALLOWED_STATE_KEYS = frozenset(
     {
         "action_weights",
         "bias",
         "evidence_weights",
         "file_weights",
+    }
+)
+# v2 adds richer per-bucket weights and a suppressed_ids set without dropping
+# any of the v1 keys, so a v2 manifest can still be loaded by the v1 scoring
+# path with the legacy buckets continuing to behave as before.
+ALLOWED_STATE_KEYS_V2 = ALLOWED_STATE_KEYS | frozenset(
+    {
+        "summary_weights",
+        "next_action_weights",
+        "avoid_weights",
+        "suppressed_ids",
     }
 )
 
@@ -53,6 +70,9 @@ class PhotonCheckpoint:
     model_version: str
     state: dict[str, object]
     warnings: tuple[str, ...] = ()
+    format: str = CHECKPOINT_FORMAT
+    source: dict[str, object] = field(default_factory=dict)
+    has_photon_runtime: bool = False
 
 
 @dataclass
@@ -72,7 +92,14 @@ class CheckpointState:
 
 
 def load_checkpoint_manifest(path: str | Path, *, strict: bool = False) -> PhotonCheckpoint:
-    """Load and validate a small PHOTON runtime checkpoint manifest."""
+    """Load and validate a small PHOTON runtime checkpoint manifest.
+
+    Accepts both the v1 (``photon-action-memory.mlx.v1``) and v2
+    (``photon-action-memory.v2``) manifest formats. v2 manifests may
+    additionally carry a ``source`` block and an ``action_memory_state``
+    sidecar file; the metadata layer is layered onto ``state`` so legacy
+    callers continue to work without branching.
+    """
     manifest_path = _manifest_path(Path(path))
     if not manifest_path.exists():
         raise CheckpointUnavailable(f"checkpoint manifest not found: {manifest_path}")
@@ -86,8 +113,11 @@ def load_checkpoint_manifest(path: str | Path, *, strict: bool = False) -> Photo
 
     if not isinstance(raw, dict):
         raise CheckpointInvalid("checkpoint manifest must be a JSON object")
-    if raw.get("format") != CHECKPOINT_FORMAT:
-        raise CheckpointInvalid(f"checkpoint manifest format must be {CHECKPOINT_FORMAT!r}")
+    fmt = raw.get("format")
+    if fmt not in SUPPORTED_CHECKPOINT_FORMATS:
+        raise CheckpointInvalid(
+            f"checkpoint manifest format must be one of {sorted(SUPPORTED_CHECKPOINT_FORMATS)!r}"
+        )
 
     model_version = raw.get("model_version")
     if not isinstance(model_version, str) or not model_version.strip():
@@ -97,12 +127,31 @@ def load_checkpoint_manifest(path: str | Path, *, strict: bool = False) -> Photo
     if not isinstance(state, dict):
         raise CheckpointInvalid("checkpoint state must be an object")
 
-    clean_state, warnings = _clean_state(state, strict=strict)
+    allowed = ALLOWED_STATE_KEYS_V2 if fmt == CHECKPOINT_FORMAT_V2 else ALLOWED_STATE_KEYS
+    clean_state, warnings = _clean_state(state, strict=strict, allowed=allowed)
+
+    source_raw = raw.get("source")
+    source: dict[str, object] = dict(source_raw) if isinstance(source_raw, dict) else {}
+    checkpoint_dir = manifest_path.parent
+    sidecar_state_path = checkpoint_dir / ACTION_MEMORY_STATE_FILENAME
+    if sidecar_state_path.exists():
+        clean_state = _merge_action_memory_sidecar(
+            clean_state,
+            sidecar_state_path,
+            warnings=warnings,
+            strict=strict,
+            allowed=allowed,
+        )
+    has_runtime = (checkpoint_dir / PHOTON_RUNTIME_DIRNAME).is_dir()
+
     return PhotonCheckpoint(
         path=manifest_path,
         model_version=model_version.strip(),
         state=clean_state,
         warnings=tuple(warnings),
+        format=fmt,
+        source=source,
+        has_photon_runtime=has_runtime,
     )
 
 
@@ -214,17 +263,57 @@ def _manifest_path(path: Path) -> Path:
     return path
 
 
-def _clean_state(raw_state: dict[str, Any], *, strict: bool) -> tuple[dict[str, object], list[str]]:
-    unknown_keys = sorted(set(raw_state) - ALLOWED_STATE_KEYS)
+def _clean_state(
+    raw_state: dict[str, Any],
+    *,
+    strict: bool,
+    allowed: frozenset[str] = ALLOWED_STATE_KEYS,
+) -> tuple[dict[str, object], list[str]]:
+    unknown_keys = sorted(set(raw_state) - allowed)
     if unknown_keys and strict:
         joined = ", ".join(unknown_keys)
         raise CheckpointInvalid(f"checkpoint state contains unknown keys: {joined}")
 
     warnings = [f"dropped unknown checkpoint state key: {key}" for key in unknown_keys]
     return (
-        {key: value for key, value in raw_state.items() if key in ALLOWED_STATE_KEYS},
+        {key: value for key, value in raw_state.items() if key in allowed},
         warnings,
     )
+
+
+def _merge_action_memory_sidecar(
+    state: dict[str, object],
+    sidecar_path: Path,
+    *,
+    warnings: list[str],
+    strict: bool,
+    allowed: frozenset[str],
+) -> dict[str, object]:
+    """Merge ``action_memory_state.json`` keys into the manifest state.
+
+    The sidecar lets a v2 checkpoint keep large weight dictionaries out of
+    the manifest itself. Manifest values win on collision so a hand-edited
+    operator override stays authoritative.
+    """
+    try:
+        raw = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        if strict:
+            raise CheckpointInvalid(
+                f"action_memory_state sidecar is not valid JSON: {sidecar_path}"
+            ) from exc
+        warnings.append(f"could not read action_memory_state sidecar: {sidecar_path.name}")
+        return state
+    if not isinstance(raw, dict):
+        if strict:
+            raise CheckpointInvalid("action_memory_state sidecar must decode to an object")
+        warnings.append("action_memory_state sidecar must decode to an object")
+        return state
+    cleaned, extra_warnings = _clean_state(raw, strict=strict, allowed=allowed)
+    warnings.extend(extra_warnings)
+    merged: dict[str, object] = dict(cleaned)
+    merged.update(state)
+    return merged
 
 
 def _sha256_file(path: Path) -> str:

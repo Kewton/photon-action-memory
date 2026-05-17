@@ -59,6 +59,11 @@ from photon_action_memory.context.raw_policy import (
     has_sensitive_content,
 )
 from photon_action_memory.context.render import estimate_tokens, render_summary
+from photon_action_memory.eval.ranking_log import (
+    RankingLogEntry,
+    RankingLogOutcome,
+    outcome_family_from_record,
+)
 from photon_action_memory.eval.summary_fidelity import SummaryFidelityChecker
 from photon_action_memory.governance.answer_leak import (
     QualityReport,
@@ -89,6 +94,13 @@ from photon_action_memory.memory.summary_generator import (
 )
 from photon_action_memory.memory.summary_store import SummaryStore
 from photon_action_memory.models.photon_adapter import score_suggestions_with_optional_adapter
+from photon_action_memory.models.photon_scorer import make_action_memory_scorer
+from photon_action_memory.ranking.context_ranking import (
+    apply_ranking_mode,
+    resolve_canary_ratio,
+    resolve_photon_weight,
+    resolve_ranking_mode,
+)
 from photon_action_memory.ranking.fallback import build_ranked_suggestions
 from photon_action_memory.ranking.guards import fallback_warnings
 
@@ -262,6 +274,36 @@ def create_app(
                 summary_feedback=feedback_map,
                 task_text=_context_task_text(request),
             )
+            try:
+                _summary_store.ranking_log.record_entries(
+                    _ranking_log_entries_from_decisions(
+                        context_pack_request_id=request.request_id,
+                        decisions=decisions,
+                        pack=pack,
+                    )
+                )
+            except Exception as ranking_log_exc:
+                logger.warning("ranking log write failed: %s", ranking_log_exc)
+            ranking_model_version: str | None = None
+            try:
+                ranking_mode = resolve_ranking_mode()
+                if ranking_mode != "deterministic" and pack.items:
+                    scorer = make_action_memory_scorer()
+                    ranking_result = apply_ranking_mode(
+                        pack,
+                        mode=ranking_mode,
+                        scorer=scorer,
+                        task_text=_context_task_text(request),
+                        request_id=request.request_id,
+                        repo_id=repo_id,
+                        feedback_map=feedback_map,
+                        photon_weight=resolve_photon_weight(),
+                        canary_ratio=resolve_canary_ratio(),
+                    )
+                    pack = ranking_result.pack
+                    ranking_model_version = ranking_result.model_version
+            except Exception as ranking_exc:
+                logger.warning("photon ranking failed: %s", ranking_exc)
             sidecar_status = "degraded" if route_warnings else "ok"
         except Exception as exc:
             empty_pack = ContextPack(
@@ -291,7 +333,7 @@ def create_app(
         return ContextPackResponse(
             schema_version=DEFAULT_SCHEMA_VERSION_V2,
             request_id=request.request_id,
-            model_version=FALLBACK_MODEL_VERSION,
+            model_version=ranking_model_version or FALLBACK_MODEL_VERSION,
             sidecar_status=sidecar_status,
             context_pack=pack,
             admission_decisions=decisions,
@@ -488,6 +530,25 @@ def create_app(
                                 message=str(exc),
                             )
                         )
+                if evt.context_pack_request_id:
+                    try:
+                        outcome_family = outcome_family_from_record(
+                            adoption_status=evt.adoption_status,
+                            outcome=evt.outcome,
+                        )
+                        outcomes = [
+                            RankingLogOutcome(
+                                context_pack_request_id=evt.context_pack_request_id,
+                                summary_id=sid,
+                                outcome_family=outcome_family,
+                                adoption_status=evt.adoption_status,
+                            )
+                            for sid in evt.summary_ids_adopted or ()
+                        ]
+                        if outcomes:
+                            _summary_store.ranking_log.update_outcomes(outcomes)
+                    except Exception as exc:
+                        logger.warning("ranking log outcome write failed: %s", exc)
         except Exception as exc:
             logger.warning("evaluate log error: %s", exc)
             route_warnings.append(ContextPackWarning(kind="eval_log_error", message=str(exc)))
@@ -535,6 +596,44 @@ def _contradiction_warning(pair: ContradictionPair) -> ContextPackWarning:
         kind="contradiction_detected",
         message=(f"{pair.kind}: {pair.summary_a_id} vs {pair.summary_b_id} - {pair.evidence}"),
     )
+
+
+def _ranking_log_entries_from_decisions(
+    *,
+    context_pack_request_id: str,
+    decisions: list[ContextAdmissionDecision],
+    pack: ContextPack,
+) -> list[RankingLogEntry]:
+    """Map admission decisions to PII-safe ranking-log rows.
+
+    Only stores summary identifiers, position, decision, and the
+    machine-readable reason — never rendered prompt text.
+    """
+    admitted_ids = {item.id for item in pack.items}
+    entries: list[RankingLogEntry] = []
+    summary_position = 0
+    seen: set[tuple[str, str]] = set()
+    for decision in decisions:
+        if decision.item_kind != "action_summary":
+            continue
+        key = (decision.item_id, decision.item_kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        selected = decision.decision == "admit" and decision.item_id in admitted_ids
+        entries.append(
+            RankingLogEntry(
+                context_pack_request_id=context_pack_request_id,
+                summary_id=decision.item_id,
+                kind="action_summary",
+                position=summary_position,
+                score=0.0,
+                selected=selected,
+                omitted_reason=None if selected else (decision.reason or "omitted"),
+            )
+        )
+        summary_position += 1
+    return entries
 
 
 def _summarize_inline_chunks(
