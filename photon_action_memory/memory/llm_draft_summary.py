@@ -479,22 +479,19 @@ def _load_mlx_generator(config: LLMDraftConfig) -> GeneratorCallable:
     :class:`MlxUnavailable` or :class:`ModelUnavailable` (never network-fetch)
     so CI without ``mlx_lm`` keeps passing.
     """
-    try:
-        import importlib  # local — avoid top-level import
+    if not _model_present_locally(config.model):
+        raise ModelUnavailable(f"model not found locally: {config.model}")
 
+    try:
         mlx_lm = importlib.import_module("mlx_lm")
     except ModuleNotFoundError as exc:
         if exc.name in {"mlx", "mlx_lm", "mlx.core"}:
             raise MlxUnavailable("optional dependency 'mlx_lm' is not installed") from exc
         raise
-
     load = getattr(mlx_lm, "load", None)
     generate = getattr(mlx_lm, "generate", None)
     if load is None or generate is None:
         raise MlxUnavailable("mlx_lm is missing 'load'/'generate' entry points")
-
-    if not _model_present_locally(config.model):
-        raise ModelUnavailable(f"model not found locally: {config.model}")
 
     model, tokenizer = load(config.model)
 
