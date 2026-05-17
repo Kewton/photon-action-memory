@@ -1,5 +1,9 @@
 # PHOTON Action Memory v0.2.0 Plan
 
+> 現在の実装状況はリポジトリ root の `README.md` と `docs/` を参照すること。
+> このディレクトリは v0.2.0 計画の履歴資料であり、現行 sidecar の endpoint
+> 実装状態や v0.4.0 LLM/PHOTON 設定の source of truth ではない。
+
 ## 目的
 
 v0.2.0 の目的は、PHOTON Action Memory を v0.1.0 の **Action Memory Sidecar** から、より強い **Action Context Firewall** へ拡張することである。

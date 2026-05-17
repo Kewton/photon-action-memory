@@ -1,7 +1,7 @@
 # Anvil Eval — Beta-Gamma Light Result Template
 
 作成日: 2026-05-13
-対象: v0.4.0 P2 `/v1/summarize` integration smoke (Issue #88)
+対象: `/v1/summarize` integration smoke (Issue #88)
 
 ## 目的
 
@@ -71,13 +71,15 @@ CI 連携時は `python3 scripts/anvil_v1_summarize_smoke.py` の終了コード
 | L2 |  |  | S3-01 |  |  |  |  |
 | L3 |  |  | S5-01 |  |  |  |  |
 
-`summarize status` 列は `ok` (P1 後) または `summarize_stub` (P1 前)。
+`summarize status` 列は、現行 sidecar では live response の `ok` または
+chunk 未投入時の `summary_fixture` を記録する。`summarize_stub` は旧 sidecar
+互換の記録値としてのみ残る。
 
 ## 補足
 
-- `/v1/summarize` が 501 を返す現状でも、smoke は fixture をフォールバック
-  として使い `summary_upsert` 以降を実行する。これにより P2 の手順を P1
-  着地前から検証できる。
+- 現行 `develop` の `/v1/summarize` は実装済み。smoke は live summary が
+  返らない場合だけ fixture をフォールバックとして使い、`summary_upsert`
+  以降を継続する。
 - 本ドキュメントは「light」の名の通り 3 シナリオに限定する。フルの
   expanded eval は Anvil 側 `e2e_uat_matrix.py` を別途回す。
 - S2-03 / S3-01 / S5-01 以外のシナリオ追加は、`SCENARIOS` 辞書

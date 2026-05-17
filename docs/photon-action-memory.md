@@ -52,27 +52,19 @@ Expected startup state:
 - The sidecar is fail-open for integration routes; callers should keep their own
   turn execution path independent of this process.
 
-### Optional PHOTON Checkpoint Scorer
+### Optional PHOTON Checkpoint Scorer Boundary
 
-The default scorer is deterministic and requires no PHOTON checkpoint. To test
-the PHOTON/MLX scorer path, point the sidecar at a local runtime checkpoint:
+The HTTP sidecar currently uses deterministic context admission and feedback
+ordering by default. Issue #123 added the runtime checkpoint format and
+`ActionMemoryPhotonScorer` factory so the PHOTON/MLX scoring path can be
+tested locally before it is wired into live `/v1/context/pack` ranking.
 
-```bash
-PHOTON_ACTION_MEMORY_CHECKPOINT=/path/to/checkpoint \
-python -m uvicorn photon_action_memory.api.server:app \
-  --host 127.0.0.1 \
-  --port 18765
-```
+Set these variables when constructing or testing the scorer:
 
-For strict local verification of `state.json` and `weights.npz` hashes:
-
-```bash
-PHOTON_ACTION_MEMORY_CHECKPOINT=/path/to/checkpoint \
-PHOTON_ACTION_MEMORY_CHECKPOINT_STRICT=true \
-python -m uvicorn photon_action_memory.api.server:app \
-  --host 127.0.0.1 \
-  --port 18765
-```
+| Variable | Purpose |
+|---|---|
+| `PHOTON_ACTION_MEMORY_CHECKPOINT` | Local checkpoint directory for `make_action_memory_scorer`. |
+| `PHOTON_ACTION_MEMORY_CHECKPOINT_STRICT` | When true, verify `state.json` and `weights.npz` hashes from `integrity.json`. |
 
 Runtime checkpoint directories use this shape:
 
@@ -125,6 +117,21 @@ python scripts/build_action_memory_checkpoint.py records.json \
 The records file may be a JSON list or an object with a `records` list. Each
 record can include `kind`, `key`/`target`/`evidence_id`/`action`, and either an
 explicit `weight` or an `adopted` boolean.
+
+Focused scorer verification:
+
+```bash
+python -m pytest \
+  tests/test_action_memory_checkpoint_builder.py \
+  tests/test_action_memory_scorer.py \
+  tests/test_photon_adapter.py \
+  tests/test_checkpoint.py \
+  -q
+```
+
+Current limitation: `PHOTON_ACTION_MEMORY_CHECKPOINT` verifies the scorer
+boundary and checkpoint fallback behavior. A trained checkpoint is not yet used
+by the default HTTP context-pack ranking path.
 
 ## API Smoke Checks
 
@@ -181,12 +188,41 @@ Expected checks:
 - `logged` is `1`.
 - The stored event has `adoption_status=shadow_not_injected`.
 
-### Summarize (v0.4.0 P1 / P2)
+### Summarize
 
-`/v1/summarize` produces an `ActionSummary` from buffered chunks. It is the
-M2 stub (HTTP 501) until v0.4.0 P1 (Issue #86) lands. The integration smoke
-expects the v0.4.0 contract and is reproducible today with a graceful 501
-fallback that uses a fixture in place of the live response.
+`/v1/summarize` is implemented. It produces an `ActionSummary` from stored
+chunk IDs, inline `ActionChunk` payloads, or a prebuilt `draft_summary` that
+needs Action Context Firewall validation before reuse.
+
+The default generator is rule-based and deterministic:
+
+```text
+event log -> ActionChunk -> ActionSummary
+```
+
+The optional LLM draft path is opt-in:
+
+```bash
+PHOTON_SUMMARY_GENERATOR=llm \
+python -m uvicorn photon_action_memory.api.server:app \
+  --host 127.0.0.1 \
+  --port 18765
+```
+
+LLM draft configuration:
+
+| Variable | Default | Values / meaning |
+|---|---|---|
+| `PHOTON_SUMMARY_GENERATOR` | `rule_based` | `rule_based` or `llm`; unknown values fall back to `rule_based`. |
+| `PHOTON_SUMMARY_LLM_MODEL` | `mlx-community/Qwen2.5-7B-Instruct-4bit` | Local MLX model identifier or path. |
+| `PHOTON_SUMMARY_LLM_FALLBACK_POLICY` | `rule_based` | `rule_based` or `abort`. |
+| `PHOTON_SUMMARY_LLM_TEMPERATURE` | `0.1` | Low temperature keeps JSON output stable. |
+| `PHOTON_SUMMARY_LLM_MAX_TOKENS` | `512` | Maximum generated tokens. |
+| `PHOTON_SUMMARY_LLM_SEED` | `1729` | Optional deterministic seed. |
+
+The LLM module is lazily imported. Missing MLX, missing model files, invalid
+JSON, schema failures, quality-gate rejection, and fidelity failures all return
+to the rule-based generator unless the fallback policy is `abort`.
 
 Request envelope:
 
@@ -206,14 +242,18 @@ Request envelope:
 }
 ```
 
-Expected response (post-P1):
+Expected response:
 
 ```json
 {
   "schema_version": "action-memory.v0.2",
   "request_id": "smoke-summarize-<short>",
+  "sidecar_status": "ok",
+  "status": "ok",
   "summary": { "summary_id": "<id>", "...": "..." },
-  "validation": { "status": "valid", "score": 0.94 }
+  "validation": { "status": "valid", "score": 0.94 },
+  "generator_used": "rule_based",
+  "generator_fallback_reason": null
 }
 ```
 
@@ -225,8 +265,9 @@ python3 scripts/anvil_v1_summarize_smoke.py --scenario S3-01
 
 The runner drives the full turn lifecycle against `127.0.0.1:18765`:
 `summarize → summary/upsert → context/pack → evidence/expand → evaluate`.
-If `/v1/summarize` is the 501 stub, the runner records
-`status=summarize_stub` and continues from `/v1/summary/upsert`. Pass
+On current `develop`, a live response should be used when matching chunks are
+available. If the sidecar is old or no stored chunk is available, the runner can
+still use a fixture fallback and continue from `/v1/summary/upsert`. Pass
 `--scenario` multiple times to run a subset; omit it to run all three
 beta-gamma-light scenarios (S2-03, S3-01, S5-01).
 

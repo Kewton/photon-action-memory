@@ -1,5 +1,9 @@
 # photon-action-memory v0.1.0 Workspace
 
+> 現在の実装状況はリポジトリ root の `README.md` と `docs/` を参照すること。
+> このディレクトリは v0.1.0 初期設計の履歴資料であり、`/v1/summarize`
+> などの現行実装状態を表す source of truth ではない。
+
 このディレクトリは、`photon-action-memory` の初期開発に向けた設計・移行・運用計画をまとめる。
 
 ## 目的
